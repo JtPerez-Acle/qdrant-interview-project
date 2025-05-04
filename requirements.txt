@@ -1,0 +1,10 @@
+numpy>=1.24.0
+qdrant-client>=1.6.0
+sentence-transformers>=2.2.2
+playwright>=1.38.0
+tqdm>=4.66.1
+matplotlib>=3.7.2
+requests>=2.31.0
+pytest>=7.4.0
+pytest-asyncio>=0.21.1
+pytest-cov>=4.1.0
