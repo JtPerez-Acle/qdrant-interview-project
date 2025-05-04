@@ -1,4 +1,4 @@
-# Contexto-Crusher 🚀
+# Contexto-Crusher 🚀 (Basic architecture complete, performance evaluation and real tests pending)
 
 An autonomous semantic sleuth that cracks [Contexto.me](https://contexto.me/) in single‑digit guesses, powered by Cognitive Mirrors recursive reasoning and local embeddings.
 
