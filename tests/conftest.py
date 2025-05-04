@@ -17,8 +17,16 @@ def test_data_dir():
 def vector_index_dir(test_data_dir):
     """Return the path to the vector index directory."""
     index_dir = os.path.join(test_data_dir, "vector_index")
+
+    # Clean up before test to ensure no lock files exist
+    if os.path.exists(index_dir):
+        shutil.rmtree(index_dir, ignore_errors=True)
+
+    # Create a fresh directory
     os.makedirs(index_dir, exist_ok=True)
+
     yield index_dir
+
     # Clean up after tests
     shutil.rmtree(index_dir, ignore_errors=True)
 
@@ -27,7 +35,7 @@ def vector_index_dir(test_data_dir):
 def mock_contexto_api():
     """Create a mock Contexto API that returns predefined ranks."""
     api = Mock()
-    
+
     # Define a dictionary of words and their ranks
     mock_ranks = {
         "paper": 823,
@@ -38,10 +46,10 @@ def mock_contexto_api():
         "papyrus": 1,
         # Add more words as needed
     }
-    
+
     # Set up the mock to return ranks from the dictionary
     api.submit_guess = Mock(side_effect=lambda word: mock_ranks.get(word, 1000))
-    
+
     return api
 
 
@@ -49,7 +57,7 @@ def mock_contexto_api():
 def small_word_list(test_data_dir):
     """Create a small word list for testing."""
     word_list_path = os.path.join(test_data_dir, "small_word_list.txt")
-    
+
     # Create a small word list if it doesn't exist
     if not os.path.exists(word_list_path):
         words = [
@@ -58,9 +66,9 @@ def small_word_list(test_data_dir):
             "page", "chapter", "paragraph", "sentence", "word", "letter",
             "novel", "story", "poem", "essay", "article", "journal"
         ]
-        
+
         os.makedirs(os.path.dirname(word_list_path), exist_ok=True)
         with open(word_list_path, "w") as f:
             f.write("\n".join(words))
-    
+
     return word_list_path
