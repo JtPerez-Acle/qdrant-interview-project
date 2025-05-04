@@ -17,6 +17,20 @@ class TestVectorDB:
         assert db.collection_name == "test_collection"
         assert db.path == vector_index_dir
         assert db.model is None  # Model should be loaded on demand
+        assert db.use_docker is False  # Default should be local mode
+        assert not hasattr(db, 'custom_batch_size')  # No custom batch size by default
+
+        # Test with custom parameters
+        db2 = VectorDB(
+            collection_name="test_collection2",
+            path=vector_index_dir,
+            use_docker=True,
+            url="http://test-url:6333",
+            batch_size=42
+        )
+        assert db2.collection_name == "test_collection2"
+        assert db2.use_docker is True
+        assert db2.custom_batch_size == 42
 
     def test_load_model(self, vector_index_dir):
         """Test that the model loads correctly."""

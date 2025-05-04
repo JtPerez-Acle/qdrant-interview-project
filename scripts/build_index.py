@@ -88,6 +88,10 @@ def main():
     parser.add_argument("--download", action="store_true", help="Download the word list")
     parser.add_argument("--url", type=str, default="https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt", help="URL to download the word list from")
     parser.add_argument("--index-path", type=str, default="data/vector_index", help="Path to store the vector index")
+    parser.add_argument("--use-docker", action="store_true", help="Use Qdrant in Docker instead of local mode")
+    parser.add_argument("--qdrant-url", type=str, default="http://localhost:6333", help="URL of the Qdrant server if using Docker")
+    parser.add_argument("--force-local", action="store_true", help="Force using local mode even for large collections")
+    parser.add_argument("--batch-size", type=int, default=64, help="Batch size for embedding generation (default: 64 for GPU, 32 for CPU)")
 
     args = parser.parse_args()
 
@@ -101,8 +105,28 @@ def main():
         print("Use --download to download a word list")
         return
 
+    # Set environment variable if forcing local mode
+    if args.force_local:
+        os.environ["QDRANT_FORCE_LOCAL"] = "1"
+        print("Forcing local mode for Qdrant (not recommended for large collections)")
+
     # Create the vector database
-    vector_db = VectorDB(collection_name="words", path=args.index_path)
+    if args.use_docker:
+        print(f"Using Qdrant in Docker mode with URL: {args.qdrant_url}")
+        vector_db = VectorDB(
+            collection_name="words",
+            path=args.index_path,
+            use_docker=True,
+            url=args.qdrant_url,
+            batch_size=args.batch_size
+        )
+    else:
+        print("Using Qdrant in local mode")
+        vector_db = VectorDB(
+            collection_name="words",
+            path=args.index_path,
+            batch_size=args.batch_size
+        )
 
     # Build the index
     build_index(args.word_list, vector_db)

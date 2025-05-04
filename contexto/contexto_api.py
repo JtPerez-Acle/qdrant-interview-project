@@ -89,6 +89,41 @@ class ContextoAPI:
             print(f"Error navigating to daily puzzle: {e}")
             return False
 
+    async def navigate_to_historical(self, date: str) -> bool:
+        """Navigate to a historical puzzle.
+
+        Args:
+            date: Date in YYYY-MM-DD format
+
+        Returns:
+            True if successful
+        """
+        try:
+            if not self.page:
+                return False
+
+            # Validate date format
+            if not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
+                print(f"Invalid date format: {date}. Expected format: YYYY-MM-DD")
+                return False
+
+            # Navigate to the historical puzzle
+            url = f"https://contexto.me/#{date}"
+            await self.page.goto(url)
+
+            # Wait for the page to load
+            await self.page.wait_for_selector("input[type='text']")
+
+            # Check if we're on the correct page
+            page_title = await self.page.title()
+            if date not in page_title:
+                print(f"Warning: Could not verify that we're on the correct historical puzzle page for {date}")
+
+            return True
+        except Exception as e:
+            print(f"Error navigating to historical puzzle for {date}: {e}")
+            return False
+
     async def submit_guess(self, word: str) -> int:
         """Submit a guess and get the rank.
 

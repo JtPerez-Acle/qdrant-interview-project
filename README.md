@@ -26,66 +26,103 @@ $ pip install -r requirements.txt
 
 # 3. Download word list & build index
 $ python scripts/build_index.py --download
+
+# For large datasets (recommended):
+# First start Qdrant in Docker
+$ python scripts/start_qdrant_docker.py
+
+# If you encounter Docker permission issues:
+$ sudo $(which python) scripts/start_qdrant_docker.py
+
+# Then build the index using Docker mode
+$ python scripts/build_index.py --download --use-docker
 ```
 
 ## 🚀 Usage
 
+### Building the Vector Index
+
+```bash
+# Download the word list and build the vector index
+$ python scripts/build_index.py --download
+
+# Use a custom word list
+$ python scripts/build_index.py --word-list path/to/wordlist.txt
+
+# Use Qdrant in Docker mode
+$ python scripts/build_index.py --use-docker --qdrant-url http://localhost:6333
+```
+
 ### Solving the Daily Puzzle
 
 ```bash
-$ python crush.py
-Contexto-Crusher 🚀
--------------------
-Initializing vector database...
+# Solve the daily puzzle
+$ python scripts/solve_contexto.py daily
+
+# Example output:
+Contexto-Crusher - Daily Puzzle Solver
+--------------------------------------------------------------------------------
+Initializing vector database from data/vector_index...
+Using Qdrant in local mode
 Initializing cognitive mirrors...
-Initializing browser...
-Navigating to Contexto.me...
+Initializing Contexto API...
+Starting Contexto API...
+Navigating to the daily puzzle...
+Initializing solver...
 
 Solving the puzzle...
+Initial guess: 'strawberry' → rank 823
+Turn 2: Guessed 'apple' → rank 589
+Turn 3: Guessed 'banana' → rank 612
+Turn 4: Guessed 'document' → rank 172
+Turn 5: Guessed 'manuscript' → rank 23
+Turn 6: Guessed 'scroll' → rank 5
+Turn 7: Guessed 'papyrus' → rank 1
 
-Results:
-Time taken: 12.34 seconds
-Attempts: 5
-Solution: papyrus 🎉
+✅ Success! Solved in 7 attempts.
+Solution: papyrus
 
 Guess history:
-1. Guessed: "paper" → rank 823
-2. Guessed: "document" → rank 172
-3. Guessed: "manuscript" → rank 23
-4. Guessed: "scroll" → rank 5
-5. Guessed: "papyrus" → rank 1
+1. Guessed: "strawberry" → rank 823
+2. Guessed: "apple" → rank 589
+3. Guessed: "banana" → rank 612
+4. Guessed: "document" → rank 172
+5. Guessed: "manuscript" → rank 23
+6. Guessed: "scroll" → rank 5
+7. Guessed: "papyrus" → rank 1
+
+Stopping Contexto API...
 ```
 
-### Evaluation on Historical Puzzles
+### Solving Historical Puzzles
 
 ```bash
-$ python eval.py --days 10 --verbose
-Contexto-Crusher Evaluation 🚀
------------------------------
-Initializing vector database...
-Initializing cognitive mirrors...
-Initializing browser (mock)...
+# Solve a historical puzzle (specify the date in YYYY-MM-DD format)
+$ python scripts/solve_contexto.py historical 2023-05-01
 
-Evaluating solver on 10 historical puzzles...
+# Use Qdrant in Docker mode
+$ python scripts/solve_contexto.py daily --use-docker --qdrant-url http://localhost:6333
 
-Evaluation Results:
-Mean attempts: 6.82
-Median attempts: 6.00
-95th percentile attempts: 9.00
-Min attempts: 4
-Max attempts: 10
-Success rate: 100.00%
-Mean time per puzzle: 5.67 seconds
-Total time: 56.70 seconds
+# Specify a custom vector database path
+$ python scripts/solve_contexto.py daily --vector-db path/to/vector_index
 
-Results saved to results.json
+# Start with a specific word
+$ python scripts/solve_contexto.py daily --initial-word "apple"
+
+# Run with visible browser (not headless)
+$ python scripts/solve_contexto.py daily --headless=false
+
+# Set maximum number of turns
+$ python scripts/solve_contexto.py daily --max-turns 100
 ```
 
-### Running Ablation Studies
+### Advanced Usage
 
 ```bash
-$ python eval.py --days 10 --ablate
-# This will run ablation studies and generate a plot
+# Get help and see all available options
+$ python scripts/solve_contexto.py --help
+$ python scripts/solve_contexto.py daily --help
+$ python scripts/solve_contexto.py historical --help
 ```
 
 ## 📚 Documentation
@@ -95,7 +132,31 @@ $ python eval.py --days 10 --ablate
 - [API](./API.md) - API documentation for core components
 - [Testing](./TESTING.md) - Testing strategy and procedures
 
-## 🧪 Benchmark Protocol
+## 🧪 Testing & Benchmarks
+
+### Quick End-to-End Test
+
+To verify that the entire pipeline is working correctly:
+
+```bash
+# Run the end-to-end test (starts Docker, builds index, tests solver, cleans up)
+$ python scripts/test_pipeline.py
+
+# If you encounter Docker permission issues, use the helper script:
+$ ./scripts/run_test_with_docker.sh
+
+# If Docker doesn't work at all, use the simple test without Docker:
+$ python scripts/test_without_docker.py
+```
+
+This test script:
+1. Starts Qdrant in Docker
+2. Creates a small test dataset
+3. Builds a vector index
+4. Tests the solver with a known target word
+5. Cleans up everything when done
+
+### Benchmark Protocol
 
 - **Historical dataset** – We replay the last 100 daily puzzles (scraped w/ checksum)
 - **Metrics** – Mean, median, p95 attempts; total runtime
