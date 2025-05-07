@@ -32,13 +32,7 @@ class Solver:
         # Add a set to track tried words (case-insensitive)
         self.tried_words_set = set()
 
-        # Add a list of fruit words that are likely to be in the dataset
-        self.fruit_words = [
-            "apple", "banana", "cherry", "date", "elderberry",
-            "fig", "grape", "honeydew", "kiwi", "lemon",
-            "mango", "nectarine", "orange", "papaya", "quince",
-            "raspberry", "strawberry", "tangerine", "watermelon"
-        ]
+        # No predefined word lists - let the system discover patterns on its own
 
     async def solve(self, initial_word: Optional[str] = None) -> Dict:
         """Solve the current Contexto puzzle.
@@ -90,30 +84,20 @@ class Solver:
             if self.history and self.history[-1][1] == 1:
                 break
 
-            # Every 5 turns, try a fruit word if available
+            # Log progress every 5 turns
             if turn % 5 == 0 and turn > 0:
-                untried_fruits = [f for f in self.fruit_words if f.lower() not in self.tried_words_set]
-                if untried_fruits:
-                    fruit = untried_fruits[0]
-                    self.tried_words_set.add(fruit.lower())
-                    rank = await self.contexto_api.submit_guess(fruit)
-                    self.history.append((fruit, rank))
-                    print(f"Fruit guess: '{fruit}' → rank {rank}")
-
-                    # Check if we found the solution
-                    if rank == 1:
-                        break
-
-                    # Continue to next turn
-                    continue
+                # Get the best rank so far
+                best_word, best_rank = min(self.history, key=lambda x: x[1])
+                logger.info(f"Progress after {len(self.history)} guesses: Best word '{best_word}' with rank {best_rank}")
 
             # Propose candidates
             candidates = self.propose_candidates(k=30)  # Increased from 20 to 30
 
-            # If we have history, use cognitive mirrors to refine candidates
+            # If we have history, use cognitive mirrors with double-loop critique process
             if self.history:
-                reflection = self.cognitive_mirrors.critic(candidates, self.history)
-                refined_candidates = await self.cognitive_mirrors.refine(candidates, reflection, self.history)
+                logger.info("Using cognitive mirrors with double-loop critique process")
+                # Process candidates through the cognitive mirrors double-loop
+                refined_candidates = await self.cognitive_mirrors.process(candidates, self.history)
                 # Use the refined candidates if available
                 if refined_candidates:
                     candidates = refined_candidates
@@ -123,21 +107,21 @@ class Solver:
 
             # If we have no valid candidates, try a more aggressive search
             if not valid_candidates:
-                print("No valid candidates found, trying fallback strategy...")
-                # Try to get some fruit/food words that might be in our dataset
-                valid_candidates = [w for w in self.fruit_words if w.lower() not in self.tried_words_set]
+                logger.warning("No valid candidates found, trying fallback strategy...")
 
-                # If still no valid candidates, just pick a random word from our dataset
+                # Try a random sampling from the vector database
+                logger.info("Using random sampling from vector database...")
+                all_words = self.vector_db.get_all_words()
+                # Shuffle the words to get a random sample
+                import random
+                random.shuffle(all_words)
+                # Take the first 100 words that haven't been tried
+                valid_candidates = [w for w in all_words[:100] if w.lower() not in self.tried_words_set]
+
+                # If still no valid candidates, we're stuck
                 if not valid_candidates:
-                    print("No valid fallback words, using random words...")
-                    # Get all words from the vector database
-                    all_words = self.vector_db.get_all_words()
-                    valid_candidates = [w for w in all_words if w.lower() not in self.tried_words_set]
-
-                    # If still no valid candidates, we're stuck
-                    if not valid_candidates:
-                        print("No valid candidates found, giving up.")
-                        break
+                    logger.error("No valid candidates found, giving up.")
+                    break
 
             # Select the best candidate
             best_candidate = self.select_best_candidate(valid_candidates)
@@ -148,6 +132,18 @@ class Solver:
             # Submit the guess
             rank = await self.contexto_api.submit_guess(best_candidate)
             self.history.append((best_candidate, rank))
+
+            # Store the guess result in the vector database for analysis
+            try:
+                self.vector_db.store_guess_result(best_candidate, rank)
+
+                # Analyze patterns if we have at least 3 guesses
+                if len(self.history) >= 3:
+                    analysis = self.vector_db.analyze_guess_patterns()
+                    if isinstance(analysis, dict) and "error" not in analysis:
+                        logger.info(f"Guess pattern analysis: {analysis}")
+            except Exception as e:
+                logger.error(f"Error storing/analyzing guess result: {e}")
 
             # Print progress
             print(f"Turn {len(self.history)}: Guessed '{best_candidate}' → rank {rank}")
@@ -192,42 +188,72 @@ class Solver:
         if target_vector is not None:
             search_strategies.append(("target", target_vector))
 
-        # Add fruit-specific search strategies
-        search_strategies.extend([
-            ("strawberry", "strawberry"),  # Directly try our target
-            ("fruit", "fruit"),
-            ("berry", "berry"),
-            ("sweet", "sweet"),
-            ("food", "food"),
-            ("red", "red"),
-            ("juicy", "juicy")
-        ])
+        # If we have history, use the best words as search strategies
+        if self.history:
+            # Sort history by rank (best first)
+            sorted_history = sorted(self.history, key=lambda x: x[1])
 
-        # Add other general search strategies
+            # Use the top 3 best words as search strategies
+            for i, (word, rank) in enumerate(sorted_history[:3]):
+                search_strategies.append((f"best_{i+1}", word))
+
+            # Also try combinations of the best words
+            if len(sorted_history) >= 2:
+                best_word = sorted_history[0][0]
+                second_best = sorted_history[1][0]
+                search_strategies.append(("best_combo", f"{best_word} {second_best}"))
+
+        # Add general search strategies based on common semantic fields
         search_strategies.extend([
-            ("common", "the"),
-            ("random", "random"),
-            ("common", "common"),
-            ("animal", "animal"),
-            ("color", "color")
+            ("abstract", "concept"),
+            ("concrete", "object"),
+            ("action", "action"),
+            ("emotion", "feeling"),
+            ("time", "time"),
+            ("space", "space"),
+            ("person", "person"),
+            ("place", "place"),
+            ("thing", "thing"),
+            ("quality", "quality"),
+            ("quantity", "quantity")
         ])
 
         # Try each strategy until we have enough candidates
+        strategy_results = {}  # Store results by strategy for analysis
+
         for strategy_name, query in search_strategies:
-            if len(all_candidates) >= k*3:  # Get 3x more candidates than needed for better selection
+            if len(all_candidates) >= k*5:  # Get 5x more candidates than needed for better selection
                 break
 
             try:
                 # Search using the current strategy
                 search_results = self.vector_db.search(query, limit=k*5)
 
+                # Store results by strategy for logging
+                filtered_results = []
+
                 # Filter out words we've already tried (case-insensitive)
                 for word, score in search_results:
                     if word and word.lower() not in tried_words and word not in [c[0] for c in all_candidates]:
                         all_candidates.append((word, score))
+                        filtered_results.append((word, score))
+
+                # Store filtered results for this strategy
+                strategy_results[strategy_name] = filtered_results
+
+                logger.info(f"Strategy '{strategy_name}' found {len(filtered_results)} candidates")
 
             except Exception as e:
-                print(f"Error during {strategy_name} search: {e}")
+                logger.error(f"Error during {strategy_name} search: {e}")
+
+        # Log the strategies and their top results for analysis
+        logger.info("Search strategy results:")
+        for strategy, results in strategy_results.items():
+            if results:
+                top_results = results[:3]  # Show top 3 results
+                logger.info(f"  Strategy '{strategy}': {', '.join([f'{word} ({score:.2f})' for word, score in top_results])}")
+            else:
+                logger.info(f"  Strategy '{strategy}': No results")
 
         # Sort candidates by score (higher score = better)
         all_candidates.sort(key=lambda x: x[1], reverse=True)
@@ -235,19 +261,20 @@ class Solver:
         # Take the top k candidates
         candidates = [word for word, _ in all_candidates[:k]]
 
-        # If we still don't have enough candidates, add some fallback words
+        # If we still don't have enough candidates, add some random words from the database
         # This should rarely happen, but we want to be safe
         if len(candidates) < k:
-            fallback_words = [
-                "apple", "banana", "cherry", "date", "elderberry",
-                "fig", "grape", "honeydew", "kiwi", "lemon",
-                "mango", "nectarine", "orange", "papaya", "quince",
-                "raspberry", "strawberry", "tangerine", "watermelon",
-                "red", "green", "blue", "yellow", "orange",
-                "dog", "cat", "bird", "fish", "horse"
-            ]
+            logger.warning(f"Not enough candidates ({len(candidates)}), adding random words from database")
 
-            for word in fallback_words:
+            # Get all words from the database
+            all_words = self.vector_db.get_all_words()
+
+            # Shuffle the words to get a random sample
+            import random
+            random.shuffle(all_words)
+
+            # Add words that haven't been tried and aren't already in candidates
+            for word in all_words:
                 if word.lower() not in tried_words and word not in candidates:
                     candidates.append(word)
                     if len(candidates) >= k:
@@ -255,8 +282,14 @@ class Solver:
 
         # Make sure we have at least one candidate
         if not candidates:
-            print("Warning: No candidates found. Using 'strawberry' as fallback.")
-            candidates = ["strawberry"]
+            logger.error("No candidates found. Using a random word from the database.")
+            # Get a random word from the database
+            all_words = self.vector_db.get_all_words()
+            if all_words:
+                candidates = [random.choice(all_words)]
+            else:
+                # If all else fails, use a common word
+                candidates = ["the"]
 
         return candidates
 
@@ -307,16 +340,19 @@ class Solver:
                     weight = 100.0
                 elif rank < 50:
                     # Very close words get high weight
-                    weight = 10.0 / (rank + 1)
+                    weight = 20.0 / (rank + 1)
                 elif rank < 200:
                     # Somewhat close words get medium weight
-                    weight = 5.0 / (rank + 1)
+                    weight = 10.0 / (rank + 1)
                 elif rank < 500:
                     # Distant words get low weight
+                    weight = 5.0 / (rank + 1)
+                elif rank < 1000:
+                    # Very distant words get minimal weight
                     weight = 1.0 / (rank + 1)
                 else:
-                    # Very distant words get minimal weight
-                    weight = 0.1 / (rank + 1)
+                    # Extremely distant words get negative weight (move away from them)
+                    weight = -0.5 / (rank + 1)
 
                 # Get the embedding
                 embedding = self.vector_db.get_embedding(word)

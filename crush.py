@@ -97,7 +97,7 @@ async def main(initial_word: Optional[str] = None, max_turns: int = 20, headless
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Solve the daily Contexto puzzle using the curated word list.")
     parser.add_argument("--initial-word", type=str, help="Initial word to start with")
-    parser.add_argument("--max-turns", type=int, default=20, help="Maximum number of turns (default: 20)")
+    parser.add_argument("--max-turns", type=int, default=50, help="Maximum number of turns (default: 50)")
     parser.add_argument("--no-headless", action="store_true", help="Run with visible browser (show browser window)")
     parser.add_argument("--force-rebuild", action="store_true", help="Force rebuild the vector index")
     parser.add_argument("--word-list", type=str, default="data/20k.txt", help="Path to word list file")

@@ -2,7 +2,8 @@
 
 import os
 import logging
-from typing import List, Optional, Tuple, Union
+import time
+from typing import List, Optional, Tuple, Union, Dict
 
 import numpy as np
 from qdrant_client import QdrantClient
@@ -432,18 +433,191 @@ class VectorDB:
             # If we couldn't extract words, use fallback
             if not words:
                 logger.warning("Could not extract words from vector database. Using fallback words.")
-                words = [
-                    "apple", "banana", "cherry", "date", "elderberry",
-                    "fig", "grape", "honeydew", "kiwi", "lemon"
-                ]
+                # Use common English words as fallback
+                words = ["the", "be", "to", "of", "and", "a", "in", "that", "have", "I",
+                         "it", "for", "not", "on", "with", "he", "as", "you", "do", "at"]
 
             logger.info(f"Retrieved {len(words)} words from the vector database")
             return words
 
         except Exception as e:
             logger.error(f"Error getting all words: {e}")
-            # Return some fallback words
-            return [
-                "apple", "banana", "cherry", "date", "elderberry",
-                "fig", "grape", "honeydew", "kiwi", "lemon"
-            ]
+            # Return some common English words
+            return ["the", "be", "to", "of", "and", "a", "in", "that", "have", "I",
+                    "it", "for", "not", "on", "with", "he", "as", "you", "do", "at"]
+
+    def get_similarity(self, word1: str, word2: str) -> float:
+        """Get similarity between two words.
+
+        Args:
+            word1: First word
+            word2: Second word
+
+        Returns:
+            Similarity score (0-1)
+        """
+        # Get embeddings
+        embedding1 = self.get_embedding(word1)
+        embedding2 = self.get_embedding(word2)
+
+        # Convert to numpy arrays if needed
+        if not isinstance(embedding1, np.ndarray):
+            embedding1 = np.array(embedding1)
+        if not isinstance(embedding2, np.ndarray):
+            embedding2 = np.array(embedding2)
+
+        # Compute cosine similarity
+        similarity = np.dot(embedding1, embedding2) / (np.linalg.norm(embedding1) * np.linalg.norm(embedding2))
+
+        return float(similarity)
+
+    def store_guess_result(self, word: str, rank: int, collection_name: str = "guess_results") -> bool:
+        """Store a word and its rank in a separate collection for analysis.
+
+        Args:
+            word: The guessed word
+            rank: The rank of the word
+            collection_name: Name of the collection to store results
+
+        Returns:
+            True if successful
+        """
+        try:
+            # Make sure model is loaded
+            if self.model is None:
+                self.load_model()
+
+            # Create the collection if it doesn't exist
+            if not self.client.collection_exists(collection_name):
+                # Get embedding dimension
+                test_embedding = self.get_embedding("test")
+                embedding_size = test_embedding.shape[0] if hasattr(test_embedding, 'shape') else len(test_embedding)
+
+                self.client.create_collection(
+                    collection_name=collection_name,
+                    vectors_config=models.VectorParams(
+                        size=embedding_size,
+                        distance=models.Distance.COSINE
+                    )
+                )
+                logger.info(f"Created collection '{collection_name}' for storing guess results")
+
+            # Get the embedding for the word
+            embedding = self.get_embedding(word)
+
+            # Store the word, rank, and embedding
+            self.client.upsert(
+                collection_name=collection_name,
+                points=[
+                    models.PointStruct(
+                        id=abs(hash(f"{word}_{rank}_{time.time()}")) % (2**63),  # Use positive integer ID
+                        vector=embedding.tolist() if isinstance(embedding, np.ndarray) else embedding,
+                        payload={
+                            "word": word,
+                            "rank": rank,
+                            "timestamp": time.time()
+                        }
+                    )
+                ]
+            )
+
+            logger.info(f"Stored guess result: '{word}' with rank {rank}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error storing guess result: {e}")
+            return False
+
+    def analyze_guess_patterns(self, collection_name: str = "guess_results", limit: int = 10) -> dict:
+        """Analyze patterns in guesses and their ranks.
+
+        Args:
+            collection_name: Name of the collection with guess results
+            limit: Maximum number of results to analyze
+
+        Returns:
+            Dictionary with analysis results
+        """
+        try:
+            # Check if the collection exists
+            if not self.client.collection_exists(collection_name):
+                logger.warning(f"Collection '{collection_name}' does not exist")
+                return {"error": "No guess results available for analysis"}
+
+            # Get all points from the collection
+            scroll_result = self.client.scroll(
+                collection_name=collection_name,
+                limit=limit,
+                with_payload=True,
+                with_vectors=True
+            )
+
+            # Extract points
+            if isinstance(scroll_result, tuple) and len(scroll_result) >= 1:
+                points = scroll_result[0]
+            else:
+                points = []
+
+            if not points:
+                return {"error": "No guess results available for analysis"}
+
+            # Extract word, rank, and embedding from each point
+            guesses = []
+            for point in points:
+                if hasattr(point, 'payload') and point.payload and "word" in point.payload and "rank" in point.payload:
+                    word = point.payload["word"]
+                    rank = point.payload["rank"]
+                    embedding = point.vector
+                    guesses.append({"word": word, "rank": rank, "embedding": embedding})
+
+            # Sort by rank (ascending)
+            guesses.sort(key=lambda g: g["rank"])
+
+            # Get the best and worst guesses
+            best_guess = guesses[0] if guesses else None
+            worst_guess = guesses[-1] if guesses else None
+
+            # Calculate average rank
+            avg_rank = sum(g["rank"] for g in guesses) / len(guesses) if guesses else 0
+
+            # Calculate similarity between best guess and other guesses
+            similarities = []
+            if best_guess and len(guesses) > 1:
+                best_embedding = best_guess["embedding"]
+                for guess in guesses[1:]:  # Skip the best guess itself
+                    embedding = guess["embedding"]
+                    # Convert to numpy arrays
+                    embedding1 = np.array(best_embedding)
+                    embedding2 = np.array(embedding)
+                    # Compute cosine similarity
+                    similarity = np.dot(embedding1, embedding2) / (np.linalg.norm(embedding1) * np.linalg.norm(embedding2))
+                    similarities.append({
+                        "word": guess["word"],
+                        "rank": guess["rank"],
+                        "similarity_to_best": float(similarity)
+                    })
+
+                # Sort by similarity (descending)
+                similarities.sort(key=lambda s: s["similarity_to_best"], reverse=True)
+
+            # Prepare the analysis results
+            analysis = {
+                "best_guess": {
+                    "word": best_guess["word"],
+                    "rank": best_guess["rank"]
+                } if best_guess else None,
+                "worst_guess": {
+                    "word": worst_guess["word"],
+                    "rank": worst_guess["rank"]
+                } if worst_guess else None,
+                "average_rank": avg_rank,
+                "total_guesses": len(guesses),
+                "most_similar_to_best": similarities[:3] if similarities else [],
+                "least_similar_to_best": similarities[-3:] if len(similarities) >= 3 else []
+            }
+
+            return analysis
+
+        except Exception as e:
+            logger.error(f"Error analyzing guess patterns: {e}")
+            return {"error": f"Error analyzing guess patterns: {e}"}
