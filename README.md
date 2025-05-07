@@ -1,188 +1,383 @@
-# Contexto-Crusher 🚀
+# 🎯 Contexto-Crusher
 
-An autonomous semantic sleuth that cracks [Contexto.me](https://contexto.me/) in single‑digit guesses, powered by a curated word list, Cognitive Mirrors recursive reasoning, and local embeddings.
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## ⚡️ Why This Exists
+An intelligent solver for the [Contexto](https://contexto.me/) word guessing game using semantic embeddings, cognitive mirrors, and rank-optimized word selection.
 
-Qdrant's DNA is vector search. Contexto is a public playground that measures semantic proximity solely by ranking—perfect ground to demonstrate how an introspection‑driven loop can navigate high‑dimensional space with ruthless efficiency.
+## What is Contexto?
 
-Our goal: average ≤ 7 guesses across 100 consecutive daily puzzles, all offline on a laptop (no OpenAI calls).
+[Contexto](https://contexto.me/) is a daily word guessing game where players try to guess a hidden target word. Unlike traditional word games:
 
-## 🧩 High‑level Architecture
+- Each guess is ranked based on its semantic similarity to the target word
+- Lower ranks mean closer to the target (rank 1 is the target word itself)
+- The goal is to find the target word in as few guesses as possible
 
-- **Core Engine** – Orchestrates the guessing loop
-- **Curated Word List** – Focused vocabulary of 5,000-10,000 common words
-- **Local Embedding Index** – HNSW index over the curated word list using sentence-transformers/all-mpnet-base-v2
-- **Cognitive Mirrors Loop** – Recursive, self‑critic module that refines candidate distribution after each feedback rank
-- **Contexto API Shim** – Headless browser (Playwright) hitting the daily puzzle
+For example, if the target word is "ocean", guessing "sea" might get rank 10 (very close), while "mountain" might get rank 5000 (far away).
 
-## 🔧 Installation
+## Project Overview
 
-```bash
-# 1. Clone
-$ git clone https://github.com/<you>/contexto-crusher && cd contexto-crusher
+Contexto-Crusher is an AI-powered solver that uses advanced natural language processing techniques to solve Contexto puzzles efficiently. It combines vector embeddings, cognitive reflection, and rank-optimized word selection to progressively narrow down the semantic space and find the target word.
 
-# 2. Install dependencies
-$ pip install -r requirements.txt
+### Key Features
 
-# 3. Install Playwright browsers
-$ playwright install
+- 🧠 **Cognitive Mirrors**: Double-loop reflection system that analyzes guess patterns
+- 📊 **Rank Optimization**: Prioritizes words likely to achieve better ranks
+- 🔍 **Vector Search**: Uses semantic embeddings to find related words
+- 🤖 **LLM Integration**: Optional integration with language models for enhanced reasoning
+- 🌐 **Browser Automation**: Interacts directly with the Contexto website
 
-# 4. Start Qdrant in Docker (recommended)
-$ python scripts/start_qdrant_docker.py
+### System Architecture
 
-# If you encounter Docker permission issues:
-$ sudo $(which python) scripts/start_qdrant_docker.py
+```mermaid
+graph TD
+    A[User Input] --> B[Solver]
+    B --> C[Vector Database]
+    B --> D[Cognitive Mirrors]
+    B --> E[Contexto API]
+    D --> F[LLM Integration]
+    C --> G[Word Embeddings]
+    E --> H[Browser Automation]
 
-# 5. Download word list & build index
-$ python scripts/build_index.py --download --use-docker
+    B --> I[Word Selection]
+    I --> J[Submit Guess]
+    J --> K[Analyze Result]
+    K --> L{Found Target?}
+    L -->|Yes| M[Success]
+    L -->|No| N[Refine Search]
+    N --> I
 ```
 
-## 🚀 Usage
+## Technical Approach
 
-### Building the Vector Index
+Contexto-Crusher employs a sophisticated multi-stage approach to solve Contexto puzzles:
 
-```bash
-# Download the word frequency list and build the vector index
-$ python scripts/build_index.py --download --use-docker
+### 1. Vector Embeddings
 
-# Use a custom word list
-$ python scripts/build_index.py --word-list path/to/wordlist.txt --use-docker
+We use semantic word embeddings to represent words in a high-dimensional vector space where similar words are closer together. This allows us to:
 
-# Specify maximum number of words to include
-$ python scripts/build_index.py --download --max-words 5000 --use-docker
-```
+- Search for semantically related words
+- Estimate the target word's position based on previous guesses
+- Measure semantic distance between words
 
-### Downloading Historical Solutions (Optional)
+### 2. Cognitive Mirrors
 
-```bash
-# Download solutions from the past 30 days
-$ python scripts/download_historical_solutions.py --days 30
+Our unique "Cognitive Mirrors" system implements a double-loop reflection process:
 
-# Download solutions for a specific date range
-$ python scripts/download_historical_solutions.py --start-date 2023-01-01 --end-date 2023-12-31
-```
+- **First Loop**: Analyzes guess history and ranks to identify patterns
+- **Second Loop**: Meta-reflection that critiques the first analysis
+- **Rank-Based Strategy**: Adapts search strategy based on current best rank
 
-### Solving the Daily Puzzle
+This approach mimics human reasoning by continuously refining its understanding of the semantic space.
 
-```bash
-# Solve the daily puzzle
-$ python crush.py
+### 3. Rank Optimization
 
-# Example output:
-2023-12-15 10:30:45,123 - __main__ - INFO - Contexto-Crusher 🚀
-2023-12-15 10:30:45,123 - __main__ - INFO - -------------------
-2023-12-15 10:30:45,124 - __main__ - INFO - Initializing vector database...
-2023-12-15 10:30:45,125 - contexto.vector_db - INFO - Initializing VectorDB with collection: words_curated
-2023-12-15 10:30:45,125 - contexto.vector_db - INFO - Using batch size: 64
-2023-12-15 10:30:45,126 - contexto.vector_db - INFO - Using local Qdrant instance at ./data/vector_index
-2023-12-15 10:30:45,127 - __main__ - INFO - Initializing cognitive mirrors...
-2023-12-15 10:30:45,128 - __main__ - INFO - Initializing browser...
-2023-12-15 10:30:45,129 - contexto.contexto_api - INFO - Launching browser...
-2023-12-15 10:30:46,234 - contexto.contexto_api - INFO - Browser launched successfully
-2023-12-15 10:30:46,235 - __main__ - INFO - Navigating to Contexto.me...
-2023-12-15 10:30:46,236 - contexto.contexto_api - INFO - Navigating to Contexto.me...
-2023-12-15 10:30:47,345 - contexto.contexto_api - INFO - Waiting for page to load...
-2023-12-15 10:30:47,678 - contexto.contexto_api - INFO - Page loaded successfully
+The system places heavy emphasis on rank information:
 
-2023-12-15 10:30:47,679 - __main__ - INFO - Solving the puzzle...
-2023-12-15 10:30:47,680 - contexto.contexto_api - INFO - Submitting guess: 'apple'
-2023-12-15 10:30:48,123 - contexto.contexto_api - INFO - Guess submitted, waiting for result...
-2023-12-15 10:30:48,456 - contexto.contexto_api - INFO - Received rank: 589
-2023-12-15 10:30:49,567 - contexto.contexto_api - INFO - Submitting guess: 'document'
-2023-12-15 10:30:50,123 - contexto.contexto_api - INFO - Guess submitted, waiting for result...
-2023-12-15 10:30:50,456 - contexto.contexto_api - INFO - Received rank: 172
-2023-12-15 10:30:51,567 - contexto.contexto_api - INFO - Submitting guess: 'manuscript'
-2023-12-15 10:30:52,123 - contexto.contexto_api - INFO - Guess submitted, waiting for result...
-2023-12-15 10:30:52,456 - contexto.contexto_api - INFO - Received rank: 23
-2023-12-15 10:30:53,567 - contexto.contexto_api - INFO - Submitting guess: 'scroll'
-2023-12-15 10:30:54,123 - contexto.contexto_api - INFO - Guess submitted, waiting for result...
-2023-12-15 10:30:54,456 - contexto.contexto_api - INFO - Received rank: 5
-2023-12-15 10:30:55,567 - contexto.contexto_api - INFO - Submitting guess: 'papyrus'
-2023-12-15 10:30:56,123 - contexto.contexto_api - INFO - Guess submitted, waiting for result...
-2023-12-15 10:30:56,456 - contexto.contexto_api - INFO - Received rank: 1
+- Weights words by their ranks (lower ranks get higher weights)
+- Identifies semantic areas that yield good vs. poor ranks
+- Dynamically adjusts search strategy based on rank progress
+- Predicts potential rank improvements for candidate words
 
-2023-12-15 10:30:56,457 - __main__ - INFO - Results:
-2023-12-15 10:30:56,458 - __main__ - INFO - Time taken: 10.33 seconds
-2023-12-15 10:30:56,459 - __main__ - INFO - Attempts: 5
-2023-12-15 10:30:56,460 - __main__ - INFO - Solution: papyrus 🎉
+### 4. LLM Integration
 
-2023-12-15 10:30:56,461 - __main__ - INFO - Guess history:
-2023-12-15 10:30:56,462 - __main__ - INFO - 1. Guessed: "apple" → rank 589
-2023-12-15 10:30:56,463 - __main__ - INFO - 2. Guessed: "document" → rank 172
-2023-12-15 10:30:56,464 - __main__ - INFO - 3. Guessed: "manuscript" → rank 23
-2023-12-15 10:30:56,465 - __main__ - INFO - 4. Guessed: "scroll" → rank 5
-2023-12-15 10:30:56,466 - __main__ - INFO - 5. Guessed: "papyrus" → rank 1
-2023-12-15 10:30:56,467 - contexto.contexto_api - INFO - Closing browser...
-2023-12-15 10:30:56,789 - contexto.contexto_api - INFO - Browser closed successfully
-```
+The system can optionally leverage large language models to enhance its reasoning capabilities:
 
-### Command-Line Options
+- Analyzes semantic patterns in guess history
+- Generates hypotheses about the target word's domain
+- Recommends words with detailed reasoning
+- Focuses on rank improvement in its analysis
+
+## Installation
+
+### Prerequisites
+
+- Python 3.8+
+- Playwright for browser automation
+- Qdrant for vector database
+- Optional: OpenAI API key for LLM integration
+
+### Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/contexto-crusher.git
+   cd contexto-crusher
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Install Playwright browsers:
+   ```bash
+   playwright install
+   ```
+
+4. Set up environment variables (optional for LLM integration):
+   ```bash
+   export OPENAI_API_KEY=your_api_key_here
+   ```
+
+## Usage
+
+### Basic Usage
+
+Run the solver with default settings:
 
 ```bash
-# Start with a specific word
-$ python crush.py --initial-word "apple"
-
-# Run with visible browser (not headless)
-$ python crush.py --no-headless
-
-# Set maximum number of turns
-$ python crush.py --max-turns 30
-
-# Get help and see all available options
-$ python crush.py --help
+python crush.py
 ```
 
-## 📚 Documentation
+This will:
+- Start with the word "thing" as the initial guess
+- Use a maximum of 50 turns
+- Run in headless mode (no visible browser)
+- Use the default word list (20k.txt)
 
-- [Architecture](./ARCHITECTURE.md) - Detailed system design and component interactions
-- [Development](./DEVELOPMENT.md) - Setup, workflow, and contribution guidelines
-- [API](./API.md) - API documentation for core components
-- [Testing](./TESTING.md) - Testing strategy and procedures
-
-## 🧪 Testing & Benchmarks
-
-### Quick End-to-End Test
-
-To verify that the entire pipeline is working correctly:
+### Command-line Options
 
 ```bash
-# Run the end-to-end test (starts Docker, builds index, tests solver, cleans up)
-$ python scripts/test_pipeline.py
-
-# If you encounter Docker permission issues, use the helper script:
-$ ./scripts/run_test_with_docker.sh
-
-# If Docker doesn't work at all, use the simple test without Docker:
-$ python scripts/test_without_docker.py
+python crush.py --help
 ```
 
-This test script:
-1. Starts Qdrant in Docker
-2. Creates a small test dataset
-3. Builds a vector index
-4. Tests the solver with a known target word
-5. Cleans up everything when done
+Available options:
 
-### Benchmark Protocol
+- `--initial-word TEXT`: Specify a custom starting word
+- `--max-turns INT`: Maximum number of turns (default: 50)
+- `--no-headless`: Run with visible browser
+- `--force-rebuild`: Force rebuild the vector index
+- `--word-list PATH`: Path to custom word list file
 
-- **Historical dataset** – We replay the last 100 daily puzzles (scraped w/ checksum)
-- **Metrics** – Mean, median, p95 attempts; total runtime
-- **Ablations** – Disable Cognitive Mirrors loop, vary introspection depth, swap embedding models
-- **Reproduction** – `eval.py --ablate` auto‑generates a results table + plot
+### Examples
 
-## 🛠️ Tech Stack
+Solve with a custom starting word:
+```bash
+python crush.py --initial-word "computer"
+```
 
-| Category | Choice | Rationale |
-|----------|--------|-----------|
-| Language | Python 3.10+ | Fast prototyping + rich ML ecosystem |
-| Vector DB | Qdrant (embedded) | Efficient vector search with HNSW index |
-| Word List | Curated 5-10k words | Focused vocabulary for better performance |
-| Embeddings | sentence-transformers/all-mpnet-base-v2 | Strong semantic signal, 768‑d, lightweight |
-| Headless client | Playwright | Reliable, handles JS, rate‑limit friendly |
-| Introspection depth | 2 iterations | Empirically best trade‑off vs. latency |
-| Compute | CPU‑only, <300 MB RAM | Reduced memory footprint with curated list |
+Run with visible browser and fewer turns:
+```bash
+python crush.py --no-headless --max-turns 30
+```
 
-## 📄 License
+Rebuild the vector index with a custom word list:
+```bash
+python crush.py --force-rebuild --word-list data/custom_words.txt
+```
 
-[MIT](LICENSE)
+## Components
+
+Contexto-Crusher consists of several key components that work together:
+
+### Vector Database (`vector_db.py`)
+
+The vector database manages word embeddings and provides semantic search capabilities:
+
+- Uses Qdrant as the underlying vector database
+- Stores embeddings for 20,000+ common English words
+- Provides semantic search functionality
+- Analyzes patterns in guess results
+
+```mermaid
+graph LR
+    A[Word List] --> B[Embeddings Model]
+    B --> C[Vector Database]
+    C --> D[Search]
+    C --> E[Similarity]
+    C --> F[Distance]
+    C --> G[Pattern Analysis]
+```
+
+### Solver (`solver.py`)
+
+The core solving engine that coordinates the overall solution strategy:
+
+- Manages the solving process from start to finish
+- Proposes candidate words using multiple strategies
+- Filters candidates to remove abbreviations and short words
+- Estimates the target vector based on guess history
+- Selects the best candidate word to try next
+
+### Cognitive Mirrors (`cognitive_mirrors.py`)
+
+Implements the double-loop reflection system:
+
+- Generates introspective questions based on guess history
+- Analyzes semantic basins, polysemy, and morphology
+- Performs detailed rank trend analysis
+- Provides meta-reflection on the solving process
+- Identifies poor semantic areas to avoid
+
+```mermaid
+graph TD
+    A[Guess History] --> B[Introspection]
+    B --> C[First Loop Analysis]
+    C --> D[Candidate Refinement]
+    D --> E[Meta-Reflection]
+    E --> F[Final Refinement]
+
+    subgraph "Analysis Types"
+    G[Semantic Basin]
+    H[Polysemy Detection]
+    I[Morphology Analysis]
+    J[Rank Trend Analysis]
+    end
+
+    C --> G
+    C --> H
+    C --> I
+    C --> J
+```
+
+### LLM Integration (`llm_integration.py`)
+
+Optional integration with large language models:
+
+- Connects to OpenAI API
+- Formats prompts with rank-focused instructions
+- Analyzes guess patterns and semantic relationships
+- Recommends words with detailed reasoning
+- Predicts potential rank improvements
+
+### Contexto API (`contexto_api.py`)
+
+Handles interaction with the Contexto website:
+
+- Uses Playwright for browser automation
+- Navigates to the daily puzzle
+- Submits guesses and retrieves ranks
+- Parses results from the webpage
+
+## Algorithm Details
+
+### Word Selection Strategy
+
+Contexto-Crusher uses a sophisticated multi-strategy approach to select words:
+
+1. **Initial Guess**: Starts with "thing" (a semantically central word)
+
+2. **Candidate Generation**:
+   - Estimates target vector based on weighted history
+   - Uses best words from history as search queries
+   - Tries combinations of best words
+   - Explores general semantic fields
+
+3. **Cognitive Processing**:
+   - Analyzes guess history for patterns
+   - Identifies semantic basins and polysemy
+   - Performs rank trend analysis
+   - Generates meta-reflections
+
+4. **Candidate Filtering**:
+   - Removes already tried words
+   - Filters out abbreviations and very short words
+   - Ensures words contain vowels
+   - Prioritizes words likely to improve rank
+
+5. **Final Selection**:
+   - Uses LLM recommendations when available
+   - Falls back to vector similarity when needed
+   - Adapts strategy based on current best rank
+
+### Rank Optimization Techniques
+
+The system employs several techniques to optimize for better ranks:
+
+1. **Weighted Vector Estimation**:
+   - Words with better ranks get higher weights
+   - Very distant words get negative weights (move away from them)
+   - Weights are normalized and used to compute a weighted average
+
+2. **Rank-Based Strategy Adaptation**:
+   - For ranks < 50: Focus intensely on similar words
+   - For ranks < 100: Focus on the semantic area
+   - For ranks < 500: Balance exploration and exploitation
+   - For ranks > 500: Prioritize diverse semantic areas
+
+3. **Rank Trend Analysis**:
+   - Tracks rank changes over time
+   - Identifies significant improvements and deteriorations
+   - Analyzes recent trends (improving, worsening, fluctuating)
+   - Recommends strategy adjustments based on trends
+
+4. **LLM Rank-Focused Prompting**:
+   - Instructs the LLM to prioritize rank improvement
+   - Provides detailed rank analysis in prompts
+   - Requests rank predictions for recommended words
+   - Emphasizes words with the best ranks in analysis
+
+### Filtering Techniques
+
+To improve efficiency and avoid wasting guesses, the system filters candidates:
+
+- **Already Tried**: Removes words already guessed
+- **Length Filter**: Removes words shorter than 3 characters
+- **Abbreviation Filter**: Removes likely abbreviations (all caps, contains periods)
+- **Vowel Check**: Ensures words contain at least one vowel
+- **Fallback**: If filtering removes all candidates, falls back to basic filtering
+
+## Performance
+
+Contexto-Crusher typically solves puzzles in 15-30 guesses, with performance varying based on the target word's semantic properties.
+
+### Optimization Techniques
+
+Several optimizations improve the system's performance:
+
+- **Curated Word List**: Uses a focused list of 20,000 common English words
+- **Aggressive Weighting**: Heavily weights words with good ranks
+- **Negative Weighting**: Moves away from semantic areas with poor ranks
+- **Double-Loop Critique**: Refines understanding through meta-reflection
+- **Dynamic Introspection**: Generates questions based on current state
+
+### Performance Factors
+
+Factors that affect solving performance:
+
+- **Target Word Frequency**: Common words are easier to find
+- **Semantic Ambiguity**: Words with multiple meanings are harder
+- **Semantic Centrality**: Words in dense semantic spaces are easier
+- **Part of Speech**: Nouns are typically easier than adjectives or verbs
+
+## Contributing
+
+Contributions to Contexto-Crusher are welcome! Here's how you can contribute:
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Commit your changes: `git commit -m 'Add amazing feature'`
+4. Push to the branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
+
+### Development Setup
+
+For development:
+
+1. Set up a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+2. Install development dependencies:
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+3. Run tests:
+   ```bash
+   pytest
+   ```
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- [Contexto](https://contexto.me/) for creating the original game
+- [Qdrant](https://qdrant.tech/) for the vector database
+- [Playwright](https://playwright.dev/) for browser automation
+- [OpenAI](https://openai.com/) for the API used in LLM integration

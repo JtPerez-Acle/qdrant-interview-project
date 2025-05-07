@@ -112,10 +112,10 @@ class LLMIntegration:
 
         candidates_text = ", ".join(candidate_info)
 
-        # Create the prompt
-        prompt = f"""You are an expert at solving Contexto.me word puzzles.
+        # Create the prompt with enhanced rank focus
+        prompt = f"""You are an expert at solving Contexto.me word puzzles with a STRONG FOCUS ON RANK IMPROVEMENT.
 
-In Contexto, each guess is ranked based on how semantically close it is to the hidden target word. The lower the rank, the closer the word is to the target (rank 1 is the target word).
+In Contexto, each guess is ranked based on how semantically close it is to the hidden target word. The lower the rank, the closer the word is to the target (rank 1 is the target word). YOUR PRIMARY GOAL IS TO FIND WORDS THAT WILL ACHIEVE THE LOWEST POSSIBLE RANK.
 
 Previous guesses sorted by rank (closest first):
 {history_by_rank}
@@ -125,44 +125,59 @@ Guesses in chronological order (to see progression):
 
 The best guess so far is '{best_word}' with rank {best_rank}.
 
-Based on these guesses, analyze the semantic patterns and identify the likely domain or concept of the target word.
+RANK ANALYSIS:
+- If rank < 50: We're very close to the target word
+- If rank < 100: We're close to the target word
+- If rank < 500: We're on the right track
+- If rank > 1000: We're still far from the target word
+
+Based on these guesses, analyze the semantic patterns and identify the likely domain or concept of the target word, with a STRONG EMPHASIS on what the rank information tells us.
 
 Think about:
-1. What semantic field or category might the target word belong to?
-2. Is the target word likely to be a noun, verb, adjective, or another part of speech?
-3. What concepts are suggested by the words with lower ranks?
+1. What semantic field or category might the target word belong to, based on the RANKS of previous guesses?
+2. Is the target word likely to be a noun, verb, adjective, or another part of speech? Look at the parts of speech of words with the LOWEST RANKS.
+3. What concepts are suggested by the words with LOWER RANKS? These are most important!
 4. Are there any patterns in the rankings that suggest a particular direction?
+5. Which semantic areas have yielded POOR RANKS that we should avoid?
 
 Available candidates for the next guess:
 {candidates_text}
 
 IMPORTANT CONTEXT: Our dataset only contains 20,000 common English words, but the target word in Contexto might not be in our dataset. We need to use our available words to get as close as possible to the target word semantically.
 
+CRITICAL RANK-BASED STRATEGY:
+- If our best rank is < 100: Focus on words very similar to our best guesses
+- If our best rank is < 500: Explore the semantic area of our best guesses
+- If our best rank is > 500: Consider more diverse semantic areas
+
 IMPORTANT RULES:
 1. Your recommendation MUST be one of the candidate words listed above EXACTLY as written.
 2. Do not suggest words that are not in this list. Do not modify or change the spelling of any candidate word.
 3. If you think the target word is not in our dataset, recommend the word that is semantically closest to what you believe the target might be.
 4. Consider both the semantic meaning AND the part of speech (noun, verb, adjective) when making your recommendation.
+5. PRIORITIZE RANK IMPROVEMENT ABOVE ALL ELSE - choose words that you believe will achieve a lower rank than our current best.
 
 Please provide:
-1. A detailed analysis of the previous guesses and what they suggest about the target word
-2. Identification of any semantic patterns or clusters
-3. Analysis of the part of speech patterns (are the closest words nouns, verbs, adjectives?)
+1. A detailed analysis of the previous guesses and what they suggest about the target word, with special attention to RANK patterns
+2. Identification of any semantic patterns or clusters among words with GOOD RANKS
+3. Analysis of the part of speech patterns among words with GOOD RANKS
 4. Your recommendation for the best next word to guess from the candidates list (must be one of the words listed above)
-5. A clear explanation of your reasoning
+5. A clear explanation of your reasoning, focusing on why you believe this word will achieve a BETTER RANK
 
 Format your response as JSON with the following structure:
 {{
   "analysis": {{
-    "patterns": "Identified semantic patterns",
-    "domain": "Likely domain or concept",
-    "part_of_speech": "Likely part of speech of the target word",
+    "patterns": "Identified semantic patterns with focus on rank correlations",
+    "domain": "Likely domain or concept based on best-ranked words",
+    "part_of_speech": "Likely part of speech of the target word based on best-ranked words",
     "closest_words_analysis": "Analysis of the words with the best ranks",
-    "observations": "Additional observations"
+    "observations": "Additional observations with emphasis on rank patterns",
+    "rank_based_strategy": "Strategy based on current best rank"
   }},
   "target_word_hypothesis": "Your best guess of what the actual target word might be (even if not in our dataset)",
   "recommendation": "your_recommended_word",
-  "reasoning": "Detailed explanation for your recommendation"
+  "reasoning": "Detailed explanation for why this word will achieve a better rank",
+  "rank_prediction": "Your prediction of what rank this word might achieve (optional)"
 }}
 """
 
@@ -243,27 +258,35 @@ Format your response as JSON with the following structure:
             # Get the analysis and recommendation
             result = await self.analyze_guesses(candidates, history)
 
-            # Get the recommended word and analysis
+            # Get the recommended word and analysis with enhanced rank information
             recommended = result.get("recommendation")
             reasoning = result.get("reasoning", "No reasoning provided")
             analysis = result.get("analysis", {})
             target_hypothesis = result.get("target_word_hypothesis", "")
+            rank_prediction = result.get("rank_prediction", "")
 
             # Log the original candidates for comparison
             logger.info(f"Original candidates (top 5): {', '.join(candidates[:5])}")
 
-            # Log the recommendation and analysis
+            # Log the recommendation and analysis with enhanced rank focus
             logger.info(f"LLM recommended word: {recommended}")
             logger.info(f"Reasoning: {reasoning}")
 
             if target_hypothesis:
                 logger.info(f"Target word hypothesis: {target_hypothesis}")
 
+            if rank_prediction:
+                logger.info(f"Rank prediction: {rank_prediction}")
+
             if analysis:
-                logger.info("LLM Analysis:")
+                logger.info("LLM Analysis with rank focus:")
                 for key, value in analysis.items():
                     if value:
                         logger.info(f"  {key}: {value}")
+
+                # Specifically log the rank-based strategy if available
+                if analysis.get("rank_based_strategy"):
+                    logger.info(f"RANK-BASED STRATEGY: {analysis.get('rank_based_strategy')}")
 
             # Check if the recommended word is in our dataset
             if recommended and recommended in candidates:
@@ -278,8 +301,18 @@ Format your response as JSON with the following structure:
             else:
                 logger.warning("No recommendation received from LLM")
 
-            # Log the final candidates list
-            logger.info(f"Final candidates after refinement (top 5): {', '.join(candidates[:5])}")
+            # Log the final candidates list with rank context
+            logger.info(f"Final candidates after rank-focused refinement (top 5): {', '.join(candidates[:5])}")
+
+            # If we have a best word from history, remind about the current best rank
+            if best_word:
+                logger.info(f"REMINDER: Current best word is '{best_word}' with rank {best_rank}")
+                if rank_prediction and rank_prediction.isdigit():
+                    predicted_rank = int(rank_prediction)
+                    if predicted_rank < best_rank:
+                        logger.info(f"POTENTIAL IMPROVEMENT: Predicted rank {predicted_rank} would be better than current best {best_rank}")
+                    else:
+                        logger.warning(f"NO IMPROVEMENT EXPECTED: Predicted rank {predicted_rank} would not improve current best {best_rank}")
 
             return candidates
 

@@ -102,8 +102,8 @@ class Solver:
                 if refined_candidates:
                     candidates = refined_candidates
 
-            # Make sure we have valid candidates
-            valid_candidates = [c for c in candidates if c.lower() not in self.tried_words_set]
+            # Make sure we have valid candidates with enhanced filtering
+            valid_candidates = self._filter_candidates(candidates)
 
             # If we have no valid candidates, try a more aggressive search
             if not valid_candidates:
@@ -115,8 +115,9 @@ class Solver:
                 # Shuffle the words to get a random sample
                 import random
                 random.shuffle(all_words)
-                # Take the first 100 words that haven't been tried
-                valid_candidates = [w for w in all_words[:100] if w.lower() not in self.tried_words_set]
+                # Take the first 200 words and apply enhanced filtering
+                pre_filtered = [w for w in all_words[:200] if w.lower() not in self.tried_words_set]
+                valid_candidates = self._filter_candidates(pre_filtered)
 
                 # If still no valid candidates, we're stuck
                 if not valid_candidates:
@@ -396,3 +397,54 @@ class Solver:
         except Exception as e:
             print(f"Error estimating target vector: {e}")
             return None
+
+    def _filter_candidates(self, candidates: List[str]) -> List[str]:
+        """Filter candidates to remove abbreviations, very short words, and already tried words.
+
+        Args:
+            candidates: List of candidate words to filter
+
+        Returns:
+            Filtered list of valid candidates
+        """
+        if not candidates:
+            return []
+
+        # First filter out words we've already tried
+        not_tried = [c for c in candidates if c.lower() not in self.tried_words_set]
+
+        # Filter out very short words (less than 3 characters)
+        min_length = 3
+        length_filtered = [c for c in not_tried if len(c) >= min_length]
+
+        # Filter out likely abbreviations (all uppercase or containing periods)
+        abbrev_filtered = []
+        for word in length_filtered:
+            # Skip words that are all uppercase (likely abbreviations)
+            if word.isupper() and len(word) <= 4:
+                logger.info(f"Filtering out likely abbreviation: '{word}'")
+                continue
+
+            # Skip words with periods (likely abbreviations)
+            if '.' in word:
+                logger.info(f"Filtering out likely abbreviation with period: '{word}'")
+                continue
+
+            # Skip words that are just 2 letters
+            if len(word) == 2 and word.isalpha():
+                logger.info(f"Filtering out 2-letter word: '{word}'")
+                continue
+
+            # Skip words that don't contain at least one vowel (likely not real words)
+            if not any(vowel in word.lower() for vowel in 'aeiou'):
+                logger.info(f"Filtering out word without vowels: '{word}'")
+                continue
+
+            abbrev_filtered.append(word)
+
+        # If filtering removed all candidates, fall back to just filtering tried words
+        if not abbrev_filtered and not_tried:
+            logger.warning("Filtering removed all candidates, falling back to basic filtering")
+            return not_tried
+
+        return abbrev_filtered

@@ -73,17 +73,32 @@ class CognitiveMirrors:
         return final_candidates
 
     def critic(self, candidates: List[str], history: List[Tuple[str, int]]) -> str:
-        """Analyze candidates and history to generate reflection.
+        """Analyze candidates and history to generate reflection with enhanced rank focus.
 
         Args:
             candidates: List of candidate words
             history: List of (word, rank) tuples from previous guesses
 
         Returns:
-            Reflection text analyzing patterns and suggesting improvements
+            Reflection text analyzing patterns and suggesting improvements with rank emphasis
         """
-        # Generate introspective questions
+        # Get the best word and rank from history
+        best_word = None
+        best_rank = float('inf')
+        if history:
+            best_word, best_rank = min(history, key=lambda x: x[1])
+
+        # Generate introspective questions with rank focus
         questions = self.introspect(history)
+
+        # Add rank-specific questions
+        if history:
+            if best_rank < 100:
+                questions.append(f"How can we find words even closer to the target than '{best_word}' (rank {best_rank})?")
+            elif best_rank < 500:
+                questions.append(f"What semantic variations of '{best_word}' (rank {best_rank}) might get us closer to the target?")
+            else:
+                questions.append(f"Should we explore completely different semantic areas than '{best_word}' (rank {best_rank})?")
 
         # Answer the questions
         answers = []
@@ -97,23 +112,64 @@ class CognitiveMirrors:
             elif "morphology" in question.lower() or "part of speech" in question.lower():
                 should_shift, explanation = self._analyze_morphology(history)
                 answers.append(f"Q: {question}\nA: {explanation}")
+            elif "closer to the target" in question or "semantic variations" in question or "different semantic areas" in question:
+                # Rank-specific questions
+                if best_rank < 100:
+                    answers.append(f"Q: {question}\nA: We should focus on subtle variations and synonyms of '{best_word}' since we're very close to the target. Look for words with similar meanings but slightly different connotations or contexts.")
+                elif best_rank < 500:
+                    answers.append(f"Q: {question}\nA: We should explore the semantic neighborhood of '{best_word}' more thoroughly. Consider related concepts, different forms, or words that share key semantic components.")
+                else:
+                    answers.append(f"Q: {question}\nA: We should try words from completely different semantic domains since our current best rank is still high. The target word might be in a different conceptual space than we've explored so far.")
             else:
                 # Generic answer for other questions
-                answers.append(f"Q: {question}\nA: Based on the current guesses, this is worth exploring.")
+                answers.append(f"Q: {question}\nA: Based on the current guesses and rank information, this is worth exploring.")
 
-        # Analyze rank trends
+        # Analyze rank trends with enhanced focus
         rank_trend = self._analyze_rank_trend(history)
 
-        # Generate reflection text
-        reflection = f"Reflection on current search trajectory:\n\n"
-        reflection += f"Current candidates: {', '.join(candidates)}\n\n"
-        reflection += f"Rank trend analysis: {rank_trend}\n\n"
+        # Perform detailed rank analysis if we have enough history
+        detailed_rank_analysis = "Not enough history for detailed rank analysis."
+        if history and len(history) >= 3:
+            try:
+                detailed_rank_analysis = self._analyze_rank_patterns(history)
+            except Exception as e:
+                logger.error(f"Error in detailed rank analysis: {e}")
+
+        # Generate reflection text with enhanced rank focus
+        reflection = f"RANK-FOCUSED Reflection on current search trajectory:\n\n"
+
+        # Add best rank information prominently
+        if best_word:
+            reflection += f"BEST WORD SO FAR: '{best_word}' with RANK {best_rank}\n\n"
+
+            # Add rank-based strategy guidance
+            if best_rank < 50:
+                reflection += f"RANK STRATEGY: We're VERY CLOSE to the target! Focus intensely on words similar to '{best_word}'.\n\n"
+            elif best_rank < 100:
+                reflection += f"RANK STRATEGY: We're CLOSE to the target! Focus on the semantic area around '{best_word}'.\n\n"
+            elif best_rank < 500:
+                reflection += f"RANK STRATEGY: We're on the right track. Balance between exploring similar words to '{best_word}' and trying some new areas.\n\n"
+            else:
+                reflection += f"RANK STRATEGY: We're still far from the target. Prioritize exploration of diverse semantic areas.\n\n"
+
+        reflection += f"Current candidates: {', '.join(candidates[:10])}\n\n"
+        reflection += f"RANK TREND ANALYSIS: {rank_trend}\n\n"
+        reflection += f"DETAILED RANK ANALYSIS: {detailed_rank_analysis}\n\n"
         reflection += "Introspective analysis:\n"
         reflection += "\n".join(answers)
-        reflection += "\n\nSuggested actions:\n"
+        reflection += "\n\nSuggested actions (RANK-PRIORITIZED):\n"
 
-        # Add suggested actions based on the analyses
+        # Add suggested actions based on the analyses with rank prioritization
         if history:
+            # First, add rank-specific actions
+            if best_rank < 100:
+                reflection += f"- HIGH PRIORITY: Focus on subtle variations of '{best_word}' to get even closer to the target\n"
+            elif best_rank < 500:
+                reflection += f"- MEDIUM PRIORITY: Explore the semantic neighborhood of '{best_word}' more thoroughly\n"
+            else:
+                reflection += f"- LOW PRIORITY: Try words from completely different semantic domains\n"
+
+            # Then add other actions
             basin_result = self._analyze_semantic_basin(history)
             if basin_result[0]:
                 reflection += f"- Explore more diverse semantic areas\n"
@@ -125,6 +181,14 @@ class CognitiveMirrors:
             morphology_result = self._analyze_morphology(history)
             if morphology_result[0]:
                 reflection += f"- Try different parts of speech (e.g., verbs instead of nouns)\n"
+
+            # Add penalty for semantic areas with poor ranks
+            try:
+                poor_areas = self._identify_poor_semantic_areas(history)
+                if poor_areas:
+                    reflection += f"- AVOID these semantic areas that have yielded poor ranks: {poor_areas}\n"
+            except Exception as e:
+                logger.error(f"Error identifying poor semantic areas: {e}")
 
         return reflection
 
@@ -241,34 +305,80 @@ class CognitiveMirrors:
         return unique_candidates
 
     def introspect(self, history: List[Tuple[str, int]]) -> List[str]:
-        """Generate introspective questions based on guess history.
+        """Generate dynamic introspective questions based on guess history with enhanced rank focus.
 
         Args:
             history: List of (word, rank) tuples from previous guesses
 
         Returns:
-            List of introspective questions
+            List of introspective questions dynamically generated based on current state
         """
-        questions = [
-            "Are we stuck in a local semantic basin?",
-            "Do ranks suggest a polysemous cluster we ignored?",
-            "Should we pivot word morphology (noun → verb)?"
-        ]
+        questions = []
 
-        # Add more specific questions based on history
+        # Base questions that are always relevant
+        questions.append("Are we stuck in a local semantic basin?")
+
+        # Get the best word and rank from history
+        if history:
+            best_word, best_rank = min(history, key=lambda x: x[1])
+
+            # Add rank-specific questions based on best rank
+            if best_rank < 100:
+                questions.append(f"What subtle variations of '{best_word}' (rank {best_rank}) might get us even closer to rank 1?")
+            elif best_rank < 500:
+                questions.append(f"What semantic field does '{best_word}' (rank {best_rank}) belong to, and what related words might be closer to rank 1?")
+            else:
+                questions.append(f"Should we explore completely different semantic areas than '{best_word}' (rank {best_rank})?")
+
+            # Add polysemy question with context
+            questions.append(f"Could the target word have multiple meanings different from what '{best_word}' suggests?")
+
+            # Add morphology question with context
+            questions.append(f"Would a different part of speech than '{best_word}' get us closer to rank 1?")
+        else:
+            # Generic questions if no history yet
+            questions.append("Do ranks suggest a polysemous cluster we ignored?")
+            questions.append("Should we pivot word morphology (noun → verb)?")
+
+        # Add more specific questions based on recent history
         if len(history) >= 3:
             # Check for rank plateaus
             ranks = [rank for _, rank in history[-3:]]
             if max(ranks) - min(ranks) < 100:
-                questions.append("Are we making sufficient progress in ranks?")
+                questions.append(f"Our recent ranks ({', '.join(str(r) for r in ranks)}) show little variation. Are we making sufficient progress?")
 
-            # Check for semantic similarity
+            # Check for rank deterioration
+            if all(history[-i][1] > history[-i-1][1] for i in range(1, min(3, len(history)))):
+                questions.append("Our recent guesses are getting worse ranks. Should we change our strategy completely?")
+
+            # Check for semantic similarity in recent words
             words = [word for word, _ in history[-3:]]
-            questions.append(f"Are '{words[0]}', '{words[1]}', and '{words[2]}' too semantically similar?")
+            questions.append(f"Are '{words[0]}', '{words[1]}', and '{words[2]}' too semantically similar to make progress?")
 
-        # Add domain-specific questions
-        if history:
-            questions.append(f"Is there a domain shift we're missing from '{history[0][0]}'?")
+            # Add question about best improvement
+            improvements = []
+            for i in range(1, len(history)):
+                prev_rank = history[i-1][1]
+                curr_rank = history[i][1]
+                change = prev_rank - curr_rank
+                if change > 0:  # Improvement
+                    improvements.append((history[i][0], change))
+
+            if improvements:
+                best_improvement = max(improvements, key=lambda x: x[1])
+                questions.append(f"What made '{best_improvement[0]}' our best improvement (rank change: -{best_improvement[1]}) and how can we build on that?")
+
+        # Add domain-specific questions based on best and worst guesses
+        if len(history) >= 5:
+            # Get best and worst guesses
+            sorted_history = sorted(history, key=lambda x: x[1])
+            best_words = [word for word, _ in sorted_history[:2]]
+            worst_words = [word for word, _ in sorted_history[-2:]]
+
+            questions.append(f"What semantic domain connects our best guesses ('{best_words[0]}', '{best_words[1]}') that our worst guesses ('{worst_words[0]}', '{worst_words[1]}') lack?")
+
+            # Add question about semantic clusters
+            questions.append("Are there distinct semantic clusters in our guesses that suggest different possible target domains?")
 
         return questions
 
@@ -539,10 +649,11 @@ class CognitiveMirrors:
         return all_forms[:count]
 
     def _meta_critic(self, candidates: List[str], initial_reflection: str, history: List[Tuple[str, int]]) -> str:
-        """Generate a meta-reflection that critiques the first refinement.
+        """Generate a meta-reflection that critiques the first refinement with enhanced rank analysis.
 
         This is the second loop of the cognitive mirrors process, where we reflect on our
-        initial reflection and refinement to further improve our understanding.
+        initial reflection and refinement to further improve our understanding, with a strong
+        emphasis on rank information to guide our decision-making.
 
         Args:
             candidates: List of candidate words after first refinement
@@ -550,7 +661,7 @@ class CognitiveMirrors:
             history: List of (word, rank) tuples from previous guesses
 
         Returns:
-            Meta-reflection text
+            Meta-reflection text with enhanced rank analysis
         """
         # Get the best word and rank from history
         if not history:
@@ -568,6 +679,12 @@ class CognitiveMirrors:
                 similarity = self.vector_db.get_similarity(top_candidate, best_word)
             except Exception as e:
                 logger.error(f"Error calculating similarity in meta-critic: {e}")
+
+        # Perform detailed rank analysis
+        rank_analysis = self._analyze_rank_patterns(history)
+
+        # Analyze semantic clusters in relation to ranks
+        semantic_clusters = self._analyze_semantic_clusters_by_rank(history)
 
         # Analyze the initial reflection
         reflection_analysis = []
@@ -611,27 +728,330 @@ class CognitiveMirrors:
             else:
                 reflection_analysis.append(f"The top candidate '{top_candidate}' appears to have the same part of speech as '{best_word}'. We might want to try words with different parts of speech.")
 
-        # Analyze rank trends
-        rank_trend = self._analyze_rank_trend(history)
-        reflection_analysis.append(f"Rank trend analysis: {rank_trend}")
+        # Add detailed rank analysis
+        reflection_analysis.append(f"Detailed rank analysis: {rank_analysis}")
 
-        # Generate meta-reflection
-        meta_reflection = "Meta-reflection on the cognitive process:\n\n"
-        meta_reflection += f"Initial top candidate after first refinement: '{top_candidate}'\n\n"
+        # Add semantic cluster analysis
+        if semantic_clusters:
+            reflection_analysis.append(f"Semantic cluster analysis: {semantic_clusters}")
+
+        # Generate meta-reflection with enhanced rank focus
+        meta_reflection = "Meta-reflection on the cognitive process with ENHANCED RANK ANALYSIS:\n\n"
+        meta_reflection += f"Initial top candidate after first refinement: '{top_candidate}'\n"
+        meta_reflection += f"Best word so far: '{best_word}' with rank {best_rank}\n\n"
         meta_reflection += "Analysis of initial reflection:\n"
         meta_reflection += "\n".join(f"- {analysis}" for analysis in reflection_analysis)
-        meta_reflection += "\n\nSuggested meta-actions:\n"
+        meta_reflection += "\n\nRank-based insights:\n"
 
-        # Add suggested meta-actions based on the analysis
-        if similarity > 0.7:
-            meta_reflection += "- Explore more semantically diverse candidates\n"
-        if len(history) >= 5 and all(history[-i][1] > history[-i-1][1] for i in range(1, min(3, len(history)))):
-            meta_reflection += "- Recent guesses are getting worse. Consider a more radical shift in strategy.\n"
-        if best_rank < 100:
-            meta_reflection += "- We're getting close! Focus on fine-tuning within the current semantic area.\n"
+        # Add rank-based insights
+        meta_reflection += self._generate_rank_based_insights(history, top_candidate)
+
+        meta_reflection += "\n\nSuggested meta-actions (RANK-PRIORITIZED):\n"
+
+        # Add suggested meta-actions based on the analysis with stronger rank emphasis
+        if best_rank < 50:
+            meta_reflection += "- CRITICAL: We're very close to the target! Focus intensely on fine-tuning within the current semantic area.\n"
+            meta_reflection += "- Prioritize words that are slight variations or closely related to our best guesses.\n"
+        elif best_rank < 100:
+            meta_reflection += "- HIGH PRIORITY: We're getting close! Focus on fine-tuning within the current semantic area.\n"
+            meta_reflection += "- Explore words that are semantically similar to our best guesses but with subtle variations.\n"
         elif best_rank < 500:
-            meta_reflection += "- We're on the right track. Balance between exploration and exploitation.\n"
+            meta_reflection += "- MEDIUM PRIORITY: We're on the right track. Balance between exploration and exploitation.\n"
+            meta_reflection += "- Consider both similar words to our best guesses and some moderately different options.\n"
         else:
-            meta_reflection += "- We're still far from the target. Prioritize exploration of diverse semantic areas.\n"
+            meta_reflection += "- LOW PRIORITY: We're still far from the target. Prioritize exploration of diverse semantic areas.\n"
+            meta_reflection += "- Try words from completely different semantic fields than our current guesses.\n"
+
+        # Add similarity-based suggestions with rank context
+        if similarity > 0.7 and best_rank > 200:
+            meta_reflection += "- The top candidate is too semantically similar to our best word, but our best rank is still high. Explore more diverse candidates.\n"
+        elif similarity < 0.3 and best_rank < 200:
+            meta_reflection += "- The top candidate is too semantically different from our best word, which has a good rank. Stay closer to the semantic area of our best guesses.\n"
+
+        # Add trend-based suggestions
+        if len(history) >= 5 and all(history[-i][1] > history[-i-1][1] for i in range(1, min(3, len(history)))):
+            meta_reflection += "- WARNING: Recent guesses are getting worse. Consider a more radical shift in strategy.\n"
+            meta_reflection += "- Avoid the semantic areas of recent guesses that led to poor ranks.\n"
+
+        # Add penalty for semantic areas with poor ranks
+        poor_areas = self._identify_poor_semantic_areas(history)
+        if poor_areas:
+            meta_reflection += f"- AVOID these semantic areas that have yielded poor ranks: {poor_areas}\n"
 
         return meta_reflection
+
+    def _analyze_rank_patterns(self, history: List[Tuple[str, int]]) -> str:
+        """Perform a detailed analysis of rank patterns to guide word selection.
+
+        Args:
+            history: List of (word, rank) tuples from previous guesses
+
+        Returns:
+            Detailed analysis of rank patterns
+        """
+        if len(history) < 3:
+            return "Not enough history to analyze rank patterns."
+
+        # Sort history by rank (best first)
+        sorted_history = sorted(history, key=lambda x: x[1])
+
+        # Calculate rank distribution
+        ranks = [rank for _, rank in history]
+        min_rank = min(ranks)
+        max_rank = max(ranks)
+        avg_rank = sum(ranks) / len(ranks)
+
+        # Analyze rank improvements
+        improvements = []
+        for i in range(1, len(history)):
+            prev_rank = history[i-1][1]
+            curr_rank = history[i][1]
+            change = prev_rank - curr_rank
+            if change > 1000:  # Significant improvement
+                improvements.append((history[i][0], change))
+
+        # Analyze rank deteriorations
+        deteriorations = []
+        for i in range(1, len(history)):
+            prev_rank = history[i-1][1]
+            curr_rank = history[i][1]
+            change = curr_rank - prev_rank
+            if change > 1000:  # Significant deterioration
+                deteriorations.append((history[i][0], change))
+
+        # Build analysis
+        analysis = []
+        analysis.append(f"Rank range: {min_rank} to {max_rank} (average: {avg_rank:.1f})")
+
+        if improvements:
+            analysis.append(f"Significant improvements: {', '.join([f'{word} (-{change})' for word, change in improvements])}")
+
+        if deteriorations:
+            analysis.append(f"Significant deteriorations: {', '.join([f'{word} (+{change})' for word, change in deteriorations])}")
+
+        # Analyze if we're getting closer
+        recent_ranks = [rank for _, rank in history[-3:]]
+        if min(recent_ranks) < min(ranks[:-3]) if len(ranks) > 3 else float('inf'):
+            analysis.append("We're making progress with recent guesses.")
+        else:
+            analysis.append("Recent guesses haven't improved our best rank.")
+
+        return " ".join(analysis)
+
+    def _analyze_semantic_clusters_by_rank(self, history: List[Tuple[str, int]]) -> str:
+        """Analyze semantic clusters in relation to their ranks.
+
+        Args:
+            history: List of (word, rank) tuples from previous guesses
+
+        Returns:
+            Analysis of semantic clusters by rank
+        """
+        if len(history) < 5:
+            return "Not enough history to analyze semantic clusters."
+
+        # Sort history by rank
+        sorted_history = sorted(history, key=lambda x: x[1])
+
+        # Try to identify semantic clusters
+        clusters = []
+
+        # Get the top 5 words
+        top_words = sorted_history[:min(5, len(sorted_history))]
+
+        # Calculate pairwise similarities
+        similarities = []
+        for i in range(len(top_words)):
+            for j in range(i+1, len(top_words)):
+                word1, rank1 = top_words[i]
+                word2, rank2 = top_words[j]
+                try:
+                    similarity = self.vector_db.get_similarity(word1, word2)
+                    similarities.append((word1, word2, similarity))
+                except Exception as e:
+                    logger.error(f"Error calculating similarity: {e}")
+
+        # Find highly similar pairs
+        similar_pairs = [(w1, w2) for w1, w2, sim in similarities if sim > 0.6]
+
+        # Build clusters based on similar pairs
+        if similar_pairs:
+            cluster_words = set()
+            for w1, w2 in similar_pairs:
+                cluster_words.add(w1)
+                cluster_words.add(w2)
+
+            if cluster_words:
+                avg_rank = sum([rank for word, rank in sorted_history if word in cluster_words]) / len(cluster_words)
+                clusters.append((list(cluster_words), avg_rank))
+
+        # Build analysis
+        if not clusters:
+            return "No clear semantic clusters identified among top-ranked words."
+
+        analysis = []
+        for cluster_words, avg_rank in clusters:
+            analysis.append(f"Semantic cluster with average rank {avg_rank:.1f}: {', '.join(cluster_words)}")
+
+        return " ".join(analysis)
+
+    def _generate_rank_based_insights(self, history: List[Tuple[str, int]], top_candidate: str) -> str:
+        """Generate insights based on rank patterns to guide word selection.
+
+        Args:
+            history: List of (word, rank) tuples from previous guesses
+            top_candidate: The top candidate word after first refinement
+
+        Returns:
+            Rank-based insights
+        """
+        if not history:
+            return "No history available for rank-based insights."
+
+        # Sort history by rank
+        sorted_history = sorted(history, key=lambda x: x[1])
+        best_word, best_rank = sorted_history[0]
+
+        # Calculate rank improvements over time
+        improvements = []
+        for i in range(1, len(history)):
+            prev_rank = history[i-1][1]
+            curr_rank = history[i][1]
+            change = prev_rank - curr_rank
+            improvements.append(change)
+
+        # Calculate average improvement
+        avg_improvement = sum(improvements) / len(improvements) if improvements else 0
+
+        # Build insights
+        insights = []
+
+        # Insight based on best rank
+        if best_rank < 50:
+            insights.append(f"Our best word '{best_word}' has rank {best_rank}, which is VERY CLOSE to the target. We should focus on words very similar to this.")
+        elif best_rank < 100:
+            insights.append(f"Our best word '{best_word}' has rank {best_rank}, which is CLOSE to the target. We should focus on this semantic area.")
+        elif best_rank < 500:
+            insights.append(f"Our best word '{best_word}' has rank {best_rank}, which is SOMEWHAT CLOSE to the target. We should explore this semantic area more.")
+        else:
+            insights.append(f"Our best word '{best_word}' has rank {best_rank}, which is STILL FAR from the target. We need to explore different semantic areas.")
+
+        # Insight based on improvement trend
+        if avg_improvement > 100:
+            insights.append(f"We're making good progress with an average rank improvement of {avg_improvement:.1f} per guess.")
+        elif avg_improvement > 0:
+            insights.append(f"We're making slow progress with an average rank improvement of {avg_improvement:.1f} per guess.")
+        else:
+            insights.append(f"We're NOT making progress with an average rank change of {avg_improvement:.1f} per guess. We need a new strategy.")
+
+        # Insight based on top candidate
+        if top_candidate:
+            # Try to predict the rank of the top candidate based on similarity to other words
+            predicted_rank = self._predict_candidate_rank(top_candidate, history)
+            if predicted_rank:
+                insights.append(f"Based on similarity patterns, the top candidate '{top_candidate}' might achieve a rank around {predicted_rank}.")
+
+                if predicted_rank < best_rank:
+                    insights.append(f"This would be an improvement over our current best rank of {best_rank}.")
+                else:
+                    insights.append(f"This would NOT improve our current best rank of {best_rank}. Consider a different candidate.")
+
+        return "\n- ".join([""] + insights)
+
+    def _predict_candidate_rank(self, candidate: str, history: List[Tuple[str, int]]) -> Optional[int]:
+        """Predict the potential rank of a candidate based on similarity to previous guesses.
+
+        Args:
+            candidate: Candidate word to predict rank for
+            history: List of (word, rank) tuples from previous guesses
+
+        Returns:
+            Predicted rank or None if prediction isn't possible
+        """
+        if not history or not candidate:
+            return None
+
+        try:
+            # Calculate similarities between candidate and all history words
+            similarities = []
+            for word, rank in history:
+                similarity = self.vector_db.get_similarity(candidate, word)
+                similarities.append((word, rank, similarity))
+
+            # Sort by similarity (highest first)
+            similarities.sort(key=lambda x: x[2], reverse=True)
+
+            # Use the top 3 most similar words to predict rank
+            top_similarities = similarities[:min(3, len(similarities))]
+
+            # Weighted average based on similarity
+            total_weight = sum(sim for _, _, sim in top_similarities)
+            if total_weight == 0:
+                return None
+
+            predicted_rank = sum(rank * sim / total_weight for _, rank, sim in top_similarities)
+
+            return int(predicted_rank)
+        except Exception as e:
+            logger.error(f"Error predicting candidate rank: {e}")
+            return None
+
+    def _identify_poor_semantic_areas(self, history: List[Tuple[str, int]]) -> str:
+        """Identify semantic areas that have yielded poor ranks.
+
+        Args:
+            history: List of (word, rank) tuples from previous guesses
+
+        Returns:
+            Description of semantic areas to avoid
+        """
+        if len(history) < 5:
+            return ""
+
+        # Sort history by rank (worst first)
+        sorted_history = sorted(history, key=lambda x: x[1], reverse=True)
+
+        # Get the worst 3 words
+        worst_words = [word for word, _ in sorted_history[:min(3, len(sorted_history))]]
+
+        # Try to find common semantic themes
+        common_themes = []
+
+        # This is a simplified implementation
+        # In a real implementation, we might use topic modeling or more sophisticated NLP
+
+        # Check for common suffixes
+        noun_suffixes = ["tion", "ment", "ity", "ness", "ance", "ence", "er", "or", "ist"]
+        verb_suffixes = ["ate", "ize", "ify", "en", "ing", "ed"]
+        adj_suffixes = ["ful", "less", "ish", "y", "al"]
+
+        # Count suffix types
+        noun_count = sum(1 for word in worst_words if any(word.endswith(suffix) for suffix in noun_suffixes))
+        verb_count = sum(1 for word in worst_words if any(word.endswith(suffix) for suffix in verb_suffixes))
+        adj_count = sum(1 for word in worst_words if any(word.endswith(suffix) for suffix in adj_suffixes))
+
+        # Identify predominant part of speech
+        if noun_count > verb_count and noun_count > adj_count:
+            common_themes.append("nouns")
+        elif verb_count > noun_count and verb_count > adj_count:
+            common_themes.append("verbs")
+        elif adj_count > noun_count and adj_count > verb_count:
+            common_themes.append("adjectives")
+
+        # Try to identify semantic similarity
+        try:
+            # Calculate pairwise similarities
+            similarities = []
+            for i in range(len(worst_words)):
+                for j in range(i+1, len(worst_words)):
+                    similarity = self.vector_db.get_similarity(worst_words[i], worst_words[j])
+                    similarities.append(similarity)
+
+            # Check if words are semantically similar
+            avg_similarity = sum(similarities) / len(similarities) if similarities else 0
+            if avg_similarity > 0.5:
+                common_themes.append(f"words similar to {', '.join(worst_words)}")
+        except Exception as e:
+            logger.error(f"Error identifying poor semantic areas: {e}")
+
+        return ", ".join(common_themes) if common_themes else f"words similar to {', '.join(worst_words)}"
