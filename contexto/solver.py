@@ -65,38 +65,20 @@ class Solver:
                     "history": self.history
                 }
 
-        # Try "strawberry" early since it's our target in the test
-        if not initial_word and "strawberry" not in self.tried_words_set:
-            self.tried_words_set.add("strawberry")
-            rank = await self.contexto_api.submit_guess("strawberry")
-            self.history.append(("strawberry", rank))
-            print(f"Initial guess: 'strawberry' → rank {rank}")
+        # If we have an initial word, use it as the first guess
+        if initial_word and initial_word not in self.tried_words_set:
+            self.tried_words_set.add(initial_word)
+            rank = await self.contexto_api.submit_guess(initial_word)
+            self.history.append((initial_word, rank))
+            logger.info(f"Initial guess: '{initial_word}' → rank {rank}")
 
             # Check if we got lucky
             if rank == 1:
                 return {
-                    "solution": "strawberry",
+                    "solution": initial_word,
                     "attempts": 1,
                     "history": self.history
                 }
-
-        # Try a few fruit words early to get a sense of the target
-        if len(self.history) < 3:
-            # Try a few fruit words to get a sense of the target
-            for fruit in ["apple", "banana", "orange", "grape"]:
-                if fruit.lower() not in self.tried_words_set and len(self.history) < 5:
-                    self.tried_words_set.add(fruit.lower())
-                    rank = await self.contexto_api.submit_guess(fruit)
-                    self.history.append((fruit, rank))
-                    print(f"Initial fruit guess: '{fruit}' → rank {rank}")
-
-                    # Check if we got lucky
-                    if rank == 1:
-                        return {
-                            "solution": fruit,
-                            "attempts": len(self.history),
-                            "history": self.history
-                        }
 
         # Main solving loop
         for turn in range(self.max_turns - len(self.history)):
@@ -127,7 +109,10 @@ class Solver:
             # If we have history, use cognitive mirrors to refine candidates
             if self.history:
                 reflection = self.cognitive_mirrors.critic(candidates, self.history)
-                candidates = self.cognitive_mirrors.refine(candidates, reflection, self.history)
+                refined_candidates = await self.cognitive_mirrors.refine(candidates, reflection, self.history)
+                # Use the refined candidates if available
+                if refined_candidates:
+                    candidates = refined_candidates
 
             # Make sure we have valid candidates
             valid_candidates = [c for c in candidates if c.lower() not in self.tried_words_set]
@@ -290,36 +275,11 @@ class Solver:
         if not valid_candidates:
             raise ValueError(f"All candidates have already been tried: {candidates}")
 
-        # If we have no history, just pick the first valid candidate
-        if not self.history:
-            return valid_candidates[0]
-
-        # Get the best rank so far
-        best_rank = min(rank for _, rank in self.history)
-
-        # Adjust exploration based on progress
-        if best_rank < 20:
-            # We're very close, focus on the best candidate
-            return valid_candidates[0]
-        elif best_rank < 100:
-            # We're making good progress, mostly focus on the best candidate
-            # but occasionally explore
-            if random.random() < 0.1:  # 10% chance of exploration
-                return random.choice(valid_candidates)
-            else:
-                return valid_candidates[0]
-        elif best_rank < 300:
-            # We're making some progress, balance between best and exploration
-            if random.random() < 0.3:  # 30% chance of exploration
-                return random.choice(valid_candidates)
-            else:
-                return valid_candidates[0]
-        else:
-            # We're not making much progress, increase exploration
-            if random.random() < 0.5:  # 50% chance of exploration
-                return random.choice(valid_candidates)
-            else:
-                return valid_candidates[0]
+        # Always use the top candidate from the refined list
+        # This ensures we use the LLM's recommendation
+        selected_word = valid_candidates[0]
+        logger.info(f"Selected word to try: '{selected_word}'")
+        return selected_word
 
     def _estimate_target_vector(self) -> Optional[np.ndarray]:
         """Estimate the target word's vector based on history.

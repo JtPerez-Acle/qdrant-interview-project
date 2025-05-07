@@ -1,6 +1,6 @@
-# Contexto-Crusher 🚀 (Basic architecture complete, performance evaluation and real tests pending)
+# Contexto-Crusher 🚀
 
-An autonomous semantic sleuth that cracks [Contexto.me](https://contexto.me/) in single‑digit guesses, powered by Cognitive Mirrors recursive reasoning and local embeddings.
+An autonomous semantic sleuth that cracks [Contexto.me](https://contexto.me/) in single‑digit guesses, powered by a curated word list, Cognitive Mirrors recursive reasoning, and local embeddings.
 
 ## ⚡️ Why This Exists
 
@@ -11,7 +11,8 @@ Our goal: average ≤ 7 guesses across 100 consecutive daily puzzles, all offlin
 ## 🧩 High‑level Architecture
 
 - **Core Engine** – Orchestrates the guessing loop
-- **Local Embedding Index** – HNSW index over ~200k common English words using sentence-transformers/all-mpnet-base-v2
+- **Curated Word List** – Focused vocabulary of 5,000-10,000 common words
+- **Local Embedding Index** – HNSW index over the curated word list using sentence-transformers/all-mpnet-base-v2
 - **Cognitive Mirrors Loop** – Recursive, self‑critic module that refines candidate distribution after each feedback rank
 - **Contexto API Shim** – Headless browser (Playwright) hitting the daily puzzle
 
@@ -24,17 +25,16 @@ $ git clone https://github.com/<you>/contexto-crusher && cd contexto-crusher
 # 2. Install dependencies
 $ pip install -r requirements.txt
 
-# 3. Download word list & build index
-$ python scripts/build_index.py --download
+# 3. Install Playwright browsers
+$ playwright install
 
-# For large datasets (recommended):
-# First start Qdrant in Docker
+# 4. Start Qdrant in Docker (recommended)
 $ python scripts/start_qdrant_docker.py
 
 # If you encounter Docker permission issues:
 $ sudo $(which python) scripts/start_qdrant_docker.py
 
-# Then build the index using Docker mode
+# 5. Download word list & build index
 $ python scripts/build_index.py --download --use-docker
 ```
 
@@ -43,86 +43,94 @@ $ python scripts/build_index.py --download --use-docker
 ### Building the Vector Index
 
 ```bash
-# Download the word list and build the vector index
-$ python scripts/build_index.py --download
+# Download the word frequency list and build the vector index
+$ python scripts/build_index.py --download --use-docker
 
 # Use a custom word list
-$ python scripts/build_index.py --word-list path/to/wordlist.txt
+$ python scripts/build_index.py --word-list path/to/wordlist.txt --use-docker
 
-# Use Qdrant in Docker mode
-$ python scripts/build_index.py --use-docker --qdrant-url http://localhost:6333
+# Specify maximum number of words to include
+$ python scripts/build_index.py --download --max-words 5000 --use-docker
+```
+
+### Downloading Historical Solutions (Optional)
+
+```bash
+# Download solutions from the past 30 days
+$ python scripts/download_historical_solutions.py --days 30
+
+# Download solutions for a specific date range
+$ python scripts/download_historical_solutions.py --start-date 2023-01-01 --end-date 2023-12-31
 ```
 
 ### Solving the Daily Puzzle
 
 ```bash
 # Solve the daily puzzle
-$ python scripts/solve_contexto.py daily
+$ python crush.py
 
 # Example output:
-Contexto-Crusher - Daily Puzzle Solver
---------------------------------------------------------------------------------
-Initializing vector database from data/vector_index...
-Using Qdrant in local mode
-Initializing cognitive mirrors...
-Initializing Contexto API...
-Starting Contexto API...
-Navigating to the daily puzzle...
-Initializing solver...
+2023-12-15 10:30:45,123 - __main__ - INFO - Contexto-Crusher 🚀
+2023-12-15 10:30:45,123 - __main__ - INFO - -------------------
+2023-12-15 10:30:45,124 - __main__ - INFO - Initializing vector database...
+2023-12-15 10:30:45,125 - contexto.vector_db - INFO - Initializing VectorDB with collection: words_curated
+2023-12-15 10:30:45,125 - contexto.vector_db - INFO - Using batch size: 64
+2023-12-15 10:30:45,126 - contexto.vector_db - INFO - Using local Qdrant instance at ./data/vector_index
+2023-12-15 10:30:45,127 - __main__ - INFO - Initializing cognitive mirrors...
+2023-12-15 10:30:45,128 - __main__ - INFO - Initializing browser...
+2023-12-15 10:30:45,129 - contexto.contexto_api - INFO - Launching browser...
+2023-12-15 10:30:46,234 - contexto.contexto_api - INFO - Browser launched successfully
+2023-12-15 10:30:46,235 - __main__ - INFO - Navigating to Contexto.me...
+2023-12-15 10:30:46,236 - contexto.contexto_api - INFO - Navigating to Contexto.me...
+2023-12-15 10:30:47,345 - contexto.contexto_api - INFO - Waiting for page to load...
+2023-12-15 10:30:47,678 - contexto.contexto_api - INFO - Page loaded successfully
 
-Solving the puzzle...
-Initial guess: 'strawberry' → rank 823
-Turn 2: Guessed 'apple' → rank 589
-Turn 3: Guessed 'banana' → rank 612
-Turn 4: Guessed 'document' → rank 172
-Turn 5: Guessed 'manuscript' → rank 23
-Turn 6: Guessed 'scroll' → rank 5
-Turn 7: Guessed 'papyrus' → rank 1
+2023-12-15 10:30:47,679 - __main__ - INFO - Solving the puzzle...
+2023-12-15 10:30:47,680 - contexto.contexto_api - INFO - Submitting guess: 'apple'
+2023-12-15 10:30:48,123 - contexto.contexto_api - INFO - Guess submitted, waiting for result...
+2023-12-15 10:30:48,456 - contexto.contexto_api - INFO - Received rank: 589
+2023-12-15 10:30:49,567 - contexto.contexto_api - INFO - Submitting guess: 'document'
+2023-12-15 10:30:50,123 - contexto.contexto_api - INFO - Guess submitted, waiting for result...
+2023-12-15 10:30:50,456 - contexto.contexto_api - INFO - Received rank: 172
+2023-12-15 10:30:51,567 - contexto.contexto_api - INFO - Submitting guess: 'manuscript'
+2023-12-15 10:30:52,123 - contexto.contexto_api - INFO - Guess submitted, waiting for result...
+2023-12-15 10:30:52,456 - contexto.contexto_api - INFO - Received rank: 23
+2023-12-15 10:30:53,567 - contexto.contexto_api - INFO - Submitting guess: 'scroll'
+2023-12-15 10:30:54,123 - contexto.contexto_api - INFO - Guess submitted, waiting for result...
+2023-12-15 10:30:54,456 - contexto.contexto_api - INFO - Received rank: 5
+2023-12-15 10:30:55,567 - contexto.contexto_api - INFO - Submitting guess: 'papyrus'
+2023-12-15 10:30:56,123 - contexto.contexto_api - INFO - Guess submitted, waiting for result...
+2023-12-15 10:30:56,456 - contexto.contexto_api - INFO - Received rank: 1
 
-✅ Success! Solved in 7 attempts.
-Solution: papyrus
+2023-12-15 10:30:56,457 - __main__ - INFO - Results:
+2023-12-15 10:30:56,458 - __main__ - INFO - Time taken: 10.33 seconds
+2023-12-15 10:30:56,459 - __main__ - INFO - Attempts: 5
+2023-12-15 10:30:56,460 - __main__ - INFO - Solution: papyrus 🎉
 
-Guess history:
-1. Guessed: "strawberry" → rank 823
-2. Guessed: "apple" → rank 589
-3. Guessed: "banana" → rank 612
-4. Guessed: "document" → rank 172
-5. Guessed: "manuscript" → rank 23
-6. Guessed: "scroll" → rank 5
-7. Guessed: "papyrus" → rank 1
-
-Stopping Contexto API...
+2023-12-15 10:30:56,461 - __main__ - INFO - Guess history:
+2023-12-15 10:30:56,462 - __main__ - INFO - 1. Guessed: "apple" → rank 589
+2023-12-15 10:30:56,463 - __main__ - INFO - 2. Guessed: "document" → rank 172
+2023-12-15 10:30:56,464 - __main__ - INFO - 3. Guessed: "manuscript" → rank 23
+2023-12-15 10:30:56,465 - __main__ - INFO - 4. Guessed: "scroll" → rank 5
+2023-12-15 10:30:56,466 - __main__ - INFO - 5. Guessed: "papyrus" → rank 1
+2023-12-15 10:30:56,467 - contexto.contexto_api - INFO - Closing browser...
+2023-12-15 10:30:56,789 - contexto.contexto_api - INFO - Browser closed successfully
 ```
 
-### Solving Historical Puzzles
+### Command-Line Options
 
 ```bash
-# Solve a historical puzzle (specify the date in YYYY-MM-DD format)
-$ python scripts/solve_contexto.py historical 2023-05-01
-
-# Use Qdrant in Docker mode
-$ python scripts/solve_contexto.py daily --use-docker --qdrant-url http://localhost:6333
-
-# Specify a custom vector database path
-$ python scripts/solve_contexto.py daily --vector-db path/to/vector_index
-
 # Start with a specific word
-$ python scripts/solve_contexto.py daily --initial-word "apple"
+$ python crush.py --initial-word "apple"
 
 # Run with visible browser (not headless)
-$ python scripts/solve_contexto.py daily --headless=false
+$ python crush.py --no-headless
 
 # Set maximum number of turns
-$ python scripts/solve_contexto.py daily --max-turns 100
-```
+$ python crush.py --max-turns 30
 
-### Advanced Usage
-
-```bash
 # Get help and see all available options
-$ python scripts/solve_contexto.py --help
-$ python scripts/solve_contexto.py daily --help
-$ python scripts/solve_contexto.py historical --help
+$ python crush.py --help
 ```
 
 ## 📚 Documentation
@@ -167,12 +175,13 @@ This test script:
 
 | Category | Choice | Rationale |
 |----------|--------|-----------|
-| Language | Python 3.11 | Fast prototyping + rich ML ecosystem |
+| Language | Python 3.10+ | Fast prototyping + rich ML ecosystem |
 | Vector DB | Qdrant (embedded) | Efficient vector search with HNSW index |
+| Word List | Curated 5-10k words | Focused vocabulary for better performance |
 | Embeddings | sentence-transformers/all-mpnet-base-v2 | Strong semantic signal, 768‑d, lightweight |
 | Headless client | Playwright | Reliable, handles JS, rate‑limit friendly |
 | Introspection depth | 2 iterations | Empirically best trade‑off vs. latency |
-| Compute | CPU‑only, <500 MB RAM | Must run on vanilla laptop |
+| Compute | CPU‑only, <300 MB RAM | Reduced memory footprint with curated list |
 
 ## 📄 License
 

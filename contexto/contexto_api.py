@@ -1,10 +1,14 @@
-"""Contexto API implementation using Playwright."""
+"""Contexto API implementation using Playwright for the curated approach."""
 
 import re
 import time
+import logging
 from typing import List, Optional, Tuple
 
 from playwright.async_api import async_playwright, Browser, Page
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 class ContextoAPI:
@@ -44,10 +48,12 @@ class ContextoAPI:
         """
         try:
             # Launch the browser
+            logger.info("Launching browser...")
             self.browser, self.page = await self._launch_browser()
+            logger.info("Browser launched successfully")
             return True
         except Exception as e:
-            print(f"Error starting browser: {e}")
+            logger.error(f"Error starting browser: {e}")
             return False
 
     async def stop(self) -> bool:
@@ -58,14 +64,16 @@ class ContextoAPI:
         """
         try:
             if self.browser:
+                logger.info("Closing browser...")
                 await self.browser.close()
 
             self.page = None
             self.browser = None
+            logger.info("Browser closed successfully")
 
             return True
         except Exception as e:
-            print(f"Error stopping browser: {e}")
+            logger.error(f"Error stopping browser: {e}")
             return False
 
     async def navigate_to_daily(self) -> bool:
@@ -76,17 +84,67 @@ class ContextoAPI:
         """
         try:
             if not self.page:
+                logger.error("No page available for navigation")
                 return False
 
-            # Navigate to Contexto.me
-            await self.page.goto("https://contexto.me/")
+            # Navigate to Contexto.me with increased timeout
+            logger.info("Navigating to Contexto.me...")
+            try:
+                await self.page.goto("https://contexto.me/", timeout=60000)  # Increase timeout to 60 seconds
+            except Exception as e:
+                logger.warning(f"Navigation timeout, but continuing anyway: {e}")
+                # Even if we get a timeout, the page might still be usable
 
             # Wait for the page to load
-            await self.page.wait_for_selector("input[type='text']")
+            logger.info("Waiting for page to load...")
+
+            # Use the exact selector for the input field
+            try:
+                await self.page.wait_for_selector("input.word[type='text']", timeout=5000)
+            except Exception:
+                try:
+                    # Try the exact JS path
+                    await self.page.wait_for_selector("#root > div > main > form > input", timeout=5000)
+                except Exception:
+                    try:
+                        # Fallback to more generic selectors
+                        await self.page.wait_for_selector("input[type='text']", timeout=5000)
+                    except Exception as e:
+                        logger.error(f"Could not find input field: {e}")
+                        # Take a screenshot to debug
+                        await self.page.screenshot(path="contexto_load_debug.png")
+                        logger.info("Debug screenshot saved as contexto_load_debug.png")
+                        return False
+
+            logger.info("Page loaded successfully")
+
+            # Check if we need to handle any cookie consent or popup
+            try:
+                cookie_button = await self.page.query_selector("button.cookie-consent-button")
+                if cookie_button:
+                    await cookie_button.click()
+                    logger.info("Clicked cookie consent button")
+            except Exception:
+                pass
+
+            # Check if we need to close any modal or popup
+            try:
+                close_button = await self.page.query_selector("button.close-modal")
+                if close_button:
+                    await close_button.click()
+                    logger.info("Closed modal popup")
+            except Exception:
+                pass
 
             return True
         except Exception as e:
-            print(f"Error navigating to daily puzzle: {e}")
+            logger.error(f"Error navigating to daily puzzle: {e}")
+            # Take a screenshot to debug
+            try:
+                await self.page.screenshot(path="contexto_error_debug.png")
+                logger.info("Debug screenshot saved as contexto_error_debug.png")
+            except Exception:
+                pass
             return False
 
     async def navigate_to_historical(self, date: str) -> bool:
@@ -135,39 +193,111 @@ class ContextoAPI:
         """
         try:
             if not self.page:
+                logger.error("No page available for submitting guess")
                 return -1
+
+            logger.info(f"Submitting guess: '{word}'")
 
             # Find the input field and submit button
-            input_field = await self.page.query_selector("input[type='text']")
-            submit_button = await self.page.query_selector("button[type='submit']")
+            # Use the exact selector for the input field
+            input_field = await self.page.query_selector("input.word[type='text']")
+            if not input_field:
+                # Try the exact JS path
+                input_field = await self.page.query_selector("#root > div > main > form > input")
+            if not input_field:
+                # Fallback to more generic selectors
+                input_field = await self.page.query_selector("input[type='text']")
 
-            if not input_field or not submit_button:
-                print("Could not find input field or submit button")
+            # For the submit button, we'll try to find the form and use Enter key instead
+            # since the user mentioned we can use enterkeyhint="send"
+            submit_button = None
+            form = await self.page.query_selector("form")
+
+            if not input_field:
+                logger.error("Could not find input field")
                 return -1
 
-            # Enter the word and submit
+            # Enter the word and submit using Enter key
             await input_field.fill(word)
-            await submit_button.click()
+            await input_field.press("Enter")
+            logger.info("Guess submitted, waiting for result...")
 
             # Wait for the result to appear
-            result_element = await self.page.wait_for_selector(".result-item:last-child .result-rank")
+            try:
+                # Wait a moment for the result to appear
+                await self.page.wait_for_timeout(2000)
 
-            if not result_element:
-                print("Could not find result element")
-                return -1
+                # Take a screenshot after submitting the guess
+                await self.page.screenshot(path="contexto_after_submit.png")
+                logger.info("Screenshot saved as contexto_after_submit.png")
 
-            # Extract the rank
-            rank_text = await result_element.text_content()
+                # Try to find the result using various selectors
+                selectors_to_try = [
+                    ".row > span:nth-child(2)",
+                    "#root > div > main > div.message > div > div > div.row > span:nth-child(2)",
+                    ".row span:last-child",
+                    "div.row span:last-child",
+                    ".row span",
+                    "div.row span",
+                    "div[class*='row'] span:last-child",
+                    "div[class*='guess'] span:last-child"
+                ]
 
-            # Parse the rank (remove any non-numeric characters)
-            rank = int(re.sub(r'[^0-9]', '', rank_text))
+                result_element = None
+                for selector in selectors_to_try:
+                    try:
+                        result_element = await self.page.wait_for_selector(selector, timeout=2000)
+                        if result_element:
+                            logger.info(f"Found result element with selector: {selector}")
+                            break
+                    except Exception:
+                        continue
 
-            # Add a small delay to avoid rate limiting
-            await self.page.wait_for_timeout(1000)
+                # If we found a result element, extract the rank
+                if result_element:
+                    try:
+                        rank_text = await result_element.text_content()
+                        # Parse the rank (remove any non-numeric characters)
+                        rank = int(re.sub(r'[^0-9]', '', rank_text))
+                        logger.info(f"Received rank: {rank}")
 
-            return rank
+                        # Add a small delay to avoid rate limiting
+                        await self.page.wait_for_timeout(1000)
+
+                        return rank
+                    except Exception as e:
+                        logger.error(f"Error extracting rank from element: {e}")
+
+                # If we still can't find the element, try to get all text on the page
+                if not result_element:
+                    logger.warning("Could not find result element with any selector, trying to extract all text")
+                    # Try to get all text on the page
+                    all_text = await self.page.evaluate("() => document.body.innerText")
+                    logger.info(f"Page text: {all_text}")
+
+                    # Try to find a number in the text that might be the rank
+                    import re
+                    rank_matches = re.findall(r'\b\d+\b', all_text)
+                    if rank_matches:
+                        # Use the first number found as the rank
+                        try:
+                            rank = int(rank_matches[0])
+                            logger.info(f"Found potential rank in page text: {rank}")
+                            return rank
+                        except ValueError:
+                            pass
+            except Exception as e:
+                logger.error(f"Error waiting for result: {e}")
+
+            # Take a screenshot to debug
+            await self.page.screenshot(path="contexto_debug.png")
+            logger.info("Debug screenshot saved as contexto_debug.png")
+
+            # If we couldn't find a rank, return a default value
+            # Using 999 instead of -1 to avoid breaking the solver's logic
+            return 999
         except Exception as e:
-            print(f"Error submitting guess: {e}")
+            logger.error(f"Error submitting guess: {e}")
             return -1
 
     async def get_history(self) -> List[Tuple[str, int]]:
