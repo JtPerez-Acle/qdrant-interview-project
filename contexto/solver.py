@@ -2,9 +2,13 @@
 
 import random
 import time
+import logging
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 class Solver:

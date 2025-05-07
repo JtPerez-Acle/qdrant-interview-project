@@ -90,10 +90,28 @@ class ContextoAPI:
             # Navigate to Contexto.me with increased timeout
             logger.info("Navigating to Contexto.me...")
             try:
-                await self.page.goto("https://contexto.me/", timeout=60000)  # Increase timeout to 60 seconds
+                # First try with a shorter timeout
+                await self.page.goto("https://contexto.me/", timeout=30000)  # 30 seconds
             except Exception as e:
-                logger.warning(f"Navigation timeout, but continuing anyway: {e}")
+                logger.warning(f"Navigation timeout with 30s, trying to continue anyway: {e}")
                 # Even if we get a timeout, the page might still be usable
+
+                # Take a screenshot to see the current state
+                try:
+                    await self.page.screenshot(path="contexto_navigation_timeout.png")
+                    logger.info("Screenshot saved as contexto_navigation_timeout.png")
+                except Exception:
+                    pass
+
+                # Try to reload the page with a shorter timeout
+                try:
+                    logger.info("Trying to reload the page...")
+                    await self.page.reload(timeout=15000)  # 15 seconds
+                except Exception as e:
+                    logger.warning(f"Reload timeout, continuing anyway: {e}")
+
+                # Wait a moment for any scripts to load
+                await self.page.wait_for_timeout(5000)
 
             # Wait for the page to load
             logger.info("Waiting for page to load...")
@@ -233,6 +251,13 @@ class ContextoAPI:
 
                 # Try to find the result using various selectors
                 selectors_to_try = [
+                    # Exact selectors provided by the user
+                    ".message > div:nth-child(1) > div:nth-child(1) > div:nth-child(2)",
+                    ".guess-history > div:nth-child(1) > div:nth-child(2)",
+                    # XPath selectors
+                    "xpath=/html/body/div[1]/div/main/div[4]/div/div/div[2]",
+                    "xpath=/html/body/div[1]/div/main/div[5]/div/div[2]",
+                    # Previous selectors as fallback
                     ".row > span:nth-child(2)",
                     "#root > div > main > div.message > div > div > div.row > span:nth-child(2)",
                     ".row span:last-child",
@@ -246,11 +271,23 @@ class ContextoAPI:
                 result_element = None
                 for selector in selectors_to_try:
                     try:
-                        result_element = await self.page.wait_for_selector(selector, timeout=2000)
+                        # Handle XPath selectors differently
+                        if selector.startswith("xpath="):
+                            xpath = selector.replace("xpath=", "")
+                            result_element = await self.page.wait_for_selector(f"xpath={xpath}", timeout=2000)
+                        else:
+                            result_element = await self.page.wait_for_selector(selector, timeout=2000)
+
                         if result_element:
                             logger.info(f"Found result element with selector: {selector}")
+
+                            # Get the text content
+                            text_content = await result_element.text_content()
+                            logger.info(f"Element text content: {text_content}")
+
                             break
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"Selector {selector} failed: {e}")
                         continue
 
                 # If we found a result element, extract the rank
@@ -258,8 +295,21 @@ class ContextoAPI:
                     try:
                         rank_text = await result_element.text_content()
                         # Parse the rank (remove any non-numeric characters)
-                        rank = int(re.sub(r'[^0-9]', '', rank_text))
-                        logger.info(f"Received rank: {rank}")
+                        # Extract numbers from the text (e.g., "feature358" -> 358)
+                        import re
+                        numbers = re.findall(r'\d+', rank_text)
+                        if numbers:
+                            rank = int(numbers[-1])  # Use the last number found
+                            logger.info(f"Received rank: {rank}")
+                        else:
+                            # If no numbers found, try to extract using regex
+                            rank_str = re.sub(r'[^0-9]', '', rank_text)
+                            if rank_str:
+                                rank = int(rank_str)
+                                logger.info(f"Received rank (using regex): {rank}")
+                            else:
+                                logger.error(f"No numbers found in text: '{rank_text}'")
+                                raise ValueError(f"No numbers found in text: '{rank_text}'")
 
                         # Add a small delay to avoid rate limiting
                         await self.page.wait_for_timeout(1000)
@@ -326,7 +376,18 @@ class ContextoAPI:
             for element in rank_elements:
                 rank_text = await element.text_content()
                 # Parse the rank (remove any non-numeric characters)
-                rank = int(re.sub(r'[^0-9]', '', rank_text))
+                import re
+                numbers = re.findall(r'\d+', rank_text)
+                if numbers:
+                    rank = int(numbers[-1])  # Use the last number found
+                else:
+                    # If no numbers found, try to extract using regex
+                    rank_str = re.sub(r'[^0-9]', '', rank_text)
+                    if rank_str:
+                        rank = int(rank_str)
+                    else:
+                        logger.warning(f"No numbers found in rank text: '{rank_text}', using 999")
+                        rank = 999
                 ranks.append(rank)
 
             # Combine words and ranks
