@@ -101,7 +101,7 @@ The system can optionally leverage large language models to enhance its reasonin
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/contexto-crusher.git
+   git clone https://github.com/JtPerez-Acle/contexto-crusher.git
    cd contexto-crusher
    ```
 
